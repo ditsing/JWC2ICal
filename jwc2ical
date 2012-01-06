@@ -17,11 +17,13 @@ my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{
 	"\x{247F}", "\x{2480}", "\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
 my @length = ( 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
 
-#my $talbe = $browser->post( $table_url, [ "BH" => $class_num]);
-#&check( $talbe, $table_url);
+#my $table = $browser->post( $table_url, [ "BH" => $class_num]);
+#&check( $table, $table_url);
 
-my $date_table = $browser->get( $date_url);
-&check( $date_table, $date_url);
+#my $date_table = $browser->get( $date_url);
+#&check( $date_table, $date_url);
+
+=pod
 
 my $time_table = $browser->get( $time_url);
 &check( $time_table, $time_url);
@@ -58,10 +60,14 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 }
 print "@class_times", "\n";
 
+=cut
+
 # So the start and end time is stored in @class_times;
 # Now for date table.
 
-my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
+#my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
+open(my $dfh, "<:encoding(gbk)", "disp.htm") || die "no open";
+my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
 
 # Only the head is needed.
 my $real_date = $date_tree->look_down( '_tag', 'thead');
@@ -166,22 +172,95 @@ my @first_monday;
 push @first_monday, int( $monday_dates[0] / 10000);
 push @first_monday, int( ( $monday_dates[0] % 10000) / 100);
 push @first_monday, int( $monday_dates[0] % 100);
+my @test = &find_date( [ @first_monday], 28);
+print "@test\n";
 
 #print "@first_monday\n". ( scalar @first_monday)."\n";
 
+#my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
+open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
+my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
+# Or I may need to find out tbody.
+my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );
+#print $real_table->as_text, "\n";
+
+# We do have 6 big lessons everyday.
+my @class;
+foreach ( 1..6)
+{
+	my $b = $_*2;
+	my $a = $b - 1;
+	my $lesson = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/($a)-($b)节/} );
+	$class[$_] = ();
+	if ( $lesson)
+	{
+#		foreach my $data ( ($lesson->content_list)[1..(($lesson->content_list)-1)])
+		# The first one is "a-b节"
+		# Seven days a week
+		my @scope = ();
+		foreach ( 1..7)
+		{
+			my $data = ( $lesson->content_list)[$_];
+			$scope[$_-1] = [];
+			if ( $data->look_down( '_tag', 'tr'))
+			{
+#				print "$a, day $_: ", $data->as_text, "\n";
+				my @str;
+				my @tmp = ();
+				foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
+				{
+#					print "\tnow : ", $_->as_text, "\n";
+					if ( $_->look_down( '_tag', 'hr'))
+					{
+#						print "Get @tmp at $a-$b\n";
+						if ( not $tmp[0] =~ m/周考试/)
+						{
+							push @str, [@tmp];
+							warn "Not expected data @tmp" if @tmp != 4;
+							@tmp = ();
+						}
+					}
+					else
+					{
+						if ( not $_->as_text eq "")
+						{
+							if ( @tmp == 1)
+							{
+								push @tmp, ( split /\s+/, $_->as_text);
+#								foreach ( split /\s+/, $_->as_text)
+#								{
+#									push @tmp, $_;
+#								}
+							}
+							else
+							{
+								push @tmp, $_->as_text;
+							}
+						}
+					}
+				}
+
+				if ( not $tmp[0] =~ m/周考试/)
+				{
+					push @str, [@tmp];
+					warn "Not expected data @tmp" if @tmp != 4;
+				}
+				push @{$scope[$_-1]}, [@str];
+			}
+		}
+		push @{$class[$_-1]}, [@scope];
+		#	print $lesson->as_text, "\n";
+	}
+}
 exit;
 
 sub find_date
 {
-	my $first_monday = $_[0];
-	my $year = ${$first_monday}[0];
-	my $month = ${$first_monday}[1];
-	my $date = ${$first_monday}[2];
-	my $week = $_[1];
-	my $day = $_[2];
-	--$week;
-	--$day;
-	$date += $week * 7;
+	my $first_day = $_[0];
+	my $year = ${$first_day}[0];
+	my $month = ${$first_day}[1];
+	my $date = ${$first_day}[2];
+	my $day = $_[1];
 	$date += $day;
 #	print "y: $year m: $month d: $date w: $week day: $day\n";
 

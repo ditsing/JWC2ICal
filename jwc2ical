@@ -1,0 +1,253 @@
+#!/usr/bin/perl -w
+
+use strict;
+use LWP;
+use HTML::Tree;
+use HTML::TreeBuilder;
+use Encode;
+use utf8;
+
+my $browser = LWP::UserAgent->new;
+my $class_num = '0903101';
+my $table_url = 'http://xscj.hit.edu.cn/Hitjwgl/XS/kfxqkb.asp';
+my $date_url = 'http://jwc.hit.edu.cn/jwc/displaytwo.asp?ID=202';
+my $time_url = 'http://jwc.hit.edu.cn/jwc/displaytwo.asp?ID=201';
+my @num_name = qw{ 一 二 三 四 五 六 七 八 九 十 十一 十二};
+my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{2479}", "\x{247A}", "\x{247B}", "\x{247C}", "\x{247D}", "\x{247E}",
+	"\x{247F}", "\x{2480}", "\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
+my @length = ( 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
+
+#my $talbe = $browser->post( $table_url, [ "BH" => $class_num]);
+#&check( $talbe, $table_url);
+
+my $date_table = $browser->get( $date_url);
+&check( $date_table, $date_url);
+
+my $time_table = $browser->get( $time_url);
+&check( $time_table, $time_url);
+
+# Now we get 3 valid tables. Although only few bytes are useful.
+# Let's parse it now.
+#
+# The time table comes first;
+
+my @class_times;
+
+my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
+# Look for a table data who has atleast 20 sons.
+my $real_time = $time_tree->look_down( '_tag', 'td', sub{ $_[0]->content_list >= 20});
+
+my $cnt = 0;
+foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节：.*：/}))
+{
+
+	my $now = $_->as_text;
+	# I hope you konw what i am doing.
+	$now =~ s/第[\s]*(?<count>.*?)[\s]*节：[\s]*([\d]+)[\s]*：[\s]*([\d]+)[\s]*～[\s]*([\d]+)[\s]*：[\s]*([\d]+)/$2:$3-$4:$5/;
+	if ( $+{count} eq $num_name[$cnt])
+	{
+		push @class_times, [ $2, $3];
+		push @class_times, [ $4, $5];
+	}
+	else
+	{
+		print "Not really $cnt\n";
+	}
+
+	++$cnt;
+}
+print "@class_times", "\n";
+
+# So the start and end time is stored in @class_times;
+# Now for date table.
+
+my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
+
+# Only the head is needed.
+my $real_date = $date_tree->look_down( '_tag', 'thead');
+
+# Get years out.
+my $year_list = $real_date->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/2011/});
+my $year = $year_list->as_text;
+$year =~ s/.*([\d]{4}).*/$1/;
+print "year is $year.\n";
+
+my @month;
+my @month_length;
+
+# Get months out.
+my $month_list = $real_date->look_down( '_tag', 'tr', sub { ($_[0]->content_list)[0]->as_text eq '月'});
+#print $month_list->as_text, "\n";
+#print scalar $month_list->content_list, "\n";
+
+foreach ( ($month_list->content_list)[1..($month_list->content_list-1)])
+{
+	push @month, &find_name( $_->as_text);
+	push @month_length, defined $_->attr( 'colspan') ? $_->attr( 'colspan') : 1;
+}
+
+print "@month", "\n";
+print "@month_length", "\n";
+foreach ( 1..@month-1)
+{
+	$month_length[$_] += $month_length[$_-1];
+}
+
+# Get weeks out.
+my $week_list = $real_date->look_down( '_tag', 'tr', sub { ( $_[0]->content_list)[0]->as_text eq '周'});
+my @weeks;
+
+foreach ( ( $week_list->content_list)[1..($week_list->content_list-1)])
+{
+	my $num = &find_syb( $_->as_text);
+	push @weeks, $num ? $num + 100: $_->as_text;
+}
+
+die "Not so useful date html ". ( scalar @weeks) . " and $month_length[-1]", "\n" if @weeks != $month_length[-1];
+
+# Get dates of mondays and sundays out.
+my @monday_dates;
+my $monday_list = $real_date->look_down( '_tag', 'tr', sub { ( $_[0]->content_list)[0]->as_text eq '星期一'});
+
+foreach ( ( $monday_list->content_list)[1..($monday_list->content_list-1)])
+{
+	push @monday_dates, $_->as_text;
+}
+
+my @sunday_dates;
+my $sunday_list = $real_date->look_down( '_tag', 'tr', sub { ( $_[0]->content_list)[0]->as_text eq '星期日'});
+
+foreach ( ( $sunday_list->content_list)[1..($sunday_list->content_list-1)])
+{
+	push @sunday_dates, $_->as_text;
+}
+
+print "@monday_dates\n", "@sunday_dates\n";
+
+# Combin years, months with dates of sundays and mondays.
+# Some hacks here.
+# Put months in 0..11
+foreach ( 0..@month-1)
+{
+	if ( ( $_ != 0) and ( $month[$_] == 1))
+	{
+		++$year;
+	}
+	$month[$_] += $year * 12 - 1;
+}
+print "@month\n";
+
+my $cur = 0;
+foreach ( 0..@weeks-1)
+{
+	if ( $_ >= $month_length[$cur])
+	{
+		++$cur;
+	}
+	if ( $monday_dates[$_] != $sunday_dates[$_] - 6)
+	{
+		if ( $sunday_dates[$_] > 3)
+		{
+			$monday_dates[$_] -= 100;
+		}
+		else
+		{
+			$sunday_dates[$_] += 100;
+		}
+	}
+	$sunday_dates[$_] = &breaks( $sunday_dates[$_], $month[$cur]);
+	$monday_dates[$_] = &breaks( $monday_dates[$_], $month[$cur]);
+}
+
+print "@monday_dates\n", "@sunday_dates\n";
+
+# We only need the first monday here.
+my @first_monday;
+push @first_monday, int( $monday_dates[0] / 10000);
+push @first_monday, int( ( $monday_dates[0] % 10000) / 100);
+push @first_monday, int( $monday_dates[0] % 100);
+
+#print "@first_monday\n". ( scalar @first_monday)."\n";
+
+exit;
+
+sub find_date
+{
+	my $first_monday = $_[0];
+	my $year = ${$first_monday}[0];
+	my $month = ${$first_monday}[1];
+	my $date = ${$first_monday}[2];
+	my $week = $_[1];
+	my $day = $_[2];
+	--$week;
+	--$day;
+	$date += $week * 7;
+	$date += $day;
+#	print "y: $year m: $month d: $date w: $week day: $day\n";
+
+	my @ret;
+	my $found = undef;
+	while ( !$found)
+	{
+		my $offset = $length[$month-1];
+		++$offset if ( $month == 2 && $year % 4 == 0 && ( $year % 100 != 0 || $year % 400 == 0));
+		if ( $date >= $offset)
+		{
+			$date -= $offset;
+			++$month;
+			$month = 1, ++$year if $month == 13;
+		}
+		else
+		{
+			$found = 1;
+		}
+	}
+
+	push @ret, $year;
+	push @ret, $month;
+	push @ret, $date;
+	return @ret;
+}
+
+
+# Convert months back.
+sub breaks
+{
+	my $day = $_[0];
+	my $mon = $_[1];
+	$day += $mon * 100;
+	$mon = int( $day / 100);
+	$day %= 100;
+	$day + int( int( $mon % 12) + 1 + int( $mon / 12) * 100) * 100;
+}
+
+sub find_name
+{
+	foreach ( 1..@num_name)
+	{
+		return $_ if ( $_[0] eq $num_name[$_-1]);
+	}
+
+	return undef;
+}
+
+sub find_syb
+{
+	foreach ( 1..@num_syb)
+	{
+		return $_ if ( $_[0] eq $num_syb[$_-1]);
+	}
+	return undef;
+}
+
+sub check
+{
+	my $response = $_[0];
+	my $url = $_[1];
+	die "$url error: ", $response->status_line unless $response->is_success;
+	die "Weird content type at $url -- ", $response->content_type unless $response->content_type eq 'text/html';
+#	print $response->content;
+
+	return $response;
+}
+

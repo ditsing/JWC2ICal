@@ -58,7 +58,7 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 
 	++$cnt;
 }
-print "@class_times", "\n";
+#print "@class_times", "\n";
 
 =cut
 
@@ -92,8 +92,8 @@ foreach ( ($month_list->content_list)[1..($month_list->content_list-1)])
 	push @month_length, defined $_->attr( 'colspan') ? $_->attr( 'colspan') : 1;
 }
 
-print "@month", "\n";
-print "@month_length", "\n";
+#print "@month", "\n";
+#print "@month_length", "\n";
 foreach ( 1..@month-1)
 {
 	$month_length[$_] += $month_length[$_-1];
@@ -128,7 +128,7 @@ foreach ( ( $sunday_list->content_list)[1..($sunday_list->content_list-1)])
 	push @sunday_dates, $_->as_text;
 }
 
-print "@monday_dates\n", "@sunday_dates\n";
+#print "@monday_dates\n", "@sunday_dates\n";
 
 # Combin years, months with dates of sundays and mondays.
 # Some hacks here.
@@ -141,7 +141,7 @@ foreach ( 0..@month-1)
 	}
 	$month[$_] += $year * 12 - 1;
 }
-print "@month\n";
+#print "@month\n";
 
 my $cur = 0;
 foreach ( 0..@weeks-1)
@@ -165,15 +165,14 @@ foreach ( 0..@weeks-1)
 	$monday_dates[$_] = &breaks( $monday_dates[$_], $month[$cur]);
 }
 
-print "@monday_dates\n", "@sunday_dates\n";
+#print "@monday_dates\n", "@sunday_dates\n";
 
 # We only need the first monday here.
 my @first_monday;
 push @first_monday, int( $monday_dates[0] / 10000);
 push @first_monday, int( ( $monday_dates[0] % 10000) / 100);
 push @first_monday, int( $monday_dates[0] % 100);
-my @test = &find_date( [ @first_monday], 28);
-print "@test\n";
+print &find_date( [ @first_monday], 28), "\n";
 
 #print "@first_monday\n". ( scalar @first_monday)."\n";
 
@@ -185,6 +184,9 @@ my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_l
 #print $real_table->as_text, "\n";
 
 # We do have 6 big lessons everyday.
+# @class[lesson][day][count] represents a class. 
+# A class is made up of four lines: Lesson Name, Teacher, Classroom, During.
+# Examinations are ignored, for they will be processed later.
 my @class;
 foreach ( 1..6)
 {
@@ -251,6 +253,19 @@ foreach ( 1..6)
 		push @{$class[$_-1]}, [@scope];
 		#	print $lesson->as_text, "\n";
 	}
+}
+
+#print ( ($real_table->content_list)[6]->as_text);
+my $exams_table = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/考\s+试\s+安\s+排/} );
+$exams_table = $exams_table->look_down( '_tag', 'table');
+my @exams;
+foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
+{
+	my @exam_info = split /\s+/, $exam->as_text;
+	# Format is: Week, day, time, location, subject. 
+	print "Get @exam_info\n";
+	warn "Not expected data @exam_info" if @exam_info != 5;
+	push @exams, [@exam_info];
 }
 exit;
 

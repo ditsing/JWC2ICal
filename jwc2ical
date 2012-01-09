@@ -46,7 +46,8 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 
 	my $now = $_->as_text;
 	# I hope you konw what i am doing.
-	$now =~ s/第[\s]*(?<count>.*?)[\s]*节：[\s]*([\d]+)[\s]*：[\s]*([\d]+)[\s]*～[\s]*([\d]+)[\s]*：[\s]*([\d]+)/$2:$3-$4:$5/;
+	$re_str = '[\s]*([\d]+)[\s]*'
+	$now =~ s/第[\s]*(?<count>.*?)[\s]*节：$re_str：$re_str～$re_str：$re_str/$2:$3-$4:$5/;
 	if ( $+{count} eq $num_name[$cnt])
 	{
 		push @class_times, [ [ $2, $3], [ $4, $5]];
@@ -63,7 +64,6 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 # Now for date table.
 
 my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
-my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
 
 # Only the head is needed.
 my $real_date = $date_tree->look_down( '_tag', 'thead');
@@ -174,7 +174,6 @@ print &find_date( [ @first_monday], 28), "\n";
 #print "@first_monday\n". ( scalar @first_monday)."\n";
 
 my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
-my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
 # Or I may need to find out tbody.
 my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );
 #print $real_table->as_text, "\n";
@@ -216,9 +215,9 @@ foreach ( 1..6)
 						{
 							warn "Not expected data @tmp" if @tmp != 4;
 							++$courses{@tmp[0]};
-							my $weeks = @tmp[3];
+							my $weeks = $tmp[3];
 							warn "Not recognized weeks at $weeks" if $weeks =~ m/(\d*)-(\d*)周/;
-							@tmp[3] = [ $1, $2];
+							$tmp[3] = [ $1, $2];
 							push @str, [ @tmp];
 							@tmp = ();
 						}
@@ -228,7 +227,8 @@ foreach ( 1..6)
 						# There will be two ( or more) empty lines after each '周考试' entry, egg pain.
 						if ( not $_->as_text eq "")
 						{
-							# When ARRAY @tmp has been pushed the course name, the following one is Teacher and Location.
+							# When ARRAY @tmp has been pushed the course name,
+							# the following one is Teacher and Location.
 							if ( @tmp == 1)
 							{
 								push @tmp, ( split /\s+/, $_->as_text);
@@ -270,7 +270,7 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 	# Format is: Week, day, time, location, subject. 
 	print "Get @exam_info\n";
 	warn "Not expected data @exam_info" if @exam_info != 5;
-	my $time = @exam_info[2];
+	my $time = $exam_info[2];
 	# Say that the start time and end time is all two digits. Like 08:00-10:00.
 	# As far as I know, HIT never starts an exam at 8:00 in the morning.
 	warn "Time format is not recognized: $time" if not $time =~ m/(\d\d):(\d\d)-(\d\d):(\d\d)/;
@@ -283,9 +283,9 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 
 
 			my $class_time = Date::ICal->new(
-				year   => @date[0];
-				month  => @date[1];
-				day    => @date[2];
+				year   => 2011
+				month  => 8
+				day    => 26
 				hour   => ${${$class_times[$i*4]}[0]}[0];
 				min    => ${${$class_times[$i*4]}[0]}[0];
 				sec    => 0;
@@ -295,11 +295,11 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 
 			exit;
 # All informations are available now.
-foreach $i ( 0..5)
+foreach my $i ( 0..5)
 {
-	foreach $j ( 0..6)
+	foreach my $j ( 0..6)
 	{
-		foreach $k ( @{$classes[$i][$j]})
+		foreach my $k ( @{$classes[$i][$j]})
 		{
 			my @class_info = @{$k};
 			# Find out when the first class starts.
@@ -309,18 +309,17 @@ foreach $i ( 0..5)
 			my $during = ${$class_info[3]}[1] - ${$class_info[3]}[0];
 
 			my $class_time = Date::ICal->new(
-				year   => @date[0];
-				month  => @date[1];
-				day    => @date[2];
-				hour   => ${${$class_times[$i*4]}[0]}[0];
-				min    => ${${$class_times[$i*4]}[0]}[0];
-				sec    => 0;
-				offset => "+0800";
+				year   => $date[0],
+				month  => $date[1],
+				day    => $date[2],
+				hour   => ${${$class_times[$i*4]}[0]}[0],
+				min    => ${${$class_times[$i*4]}[0]}[0],
+				sec    => 0,
+				offset => "+0800",
 			)
 			my $vevent = Data::ICal::Event->new();
 			$vevent->add_properties(
 				dtstart  => Date::ICal->new( )->ical;
-				location => 
 
 			);
 		}

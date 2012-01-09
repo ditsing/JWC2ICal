@@ -1,1 +1,2 @@
 将教务处上的课程表转换为ICalender格式，方便导入到Google Calender或者Apple的iCal。
+Perl脚本，需要Data::ICal，Date::ICal，LWP等模块支持。

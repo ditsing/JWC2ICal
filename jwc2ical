@@ -327,7 +327,7 @@ $vcal->add_entry( $vtz);
 
 print $vcal->as_string, "\n";
 
-# Envents come here.
+# Envents come here
 foreach my $i ( 0..5)
 {
 	foreach my $j ( 0..6)

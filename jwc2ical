@@ -6,7 +6,10 @@ use HTML::Tree;
 use HTML::TreeBuilder;
 use Encode;
 use Data::ICal;
-use Date::ICal;
+use Data::ICal qw(all);
+use Data::ICal::Entry::TimeZone;
+use Data::ICal::Entry::TimeZone::Standard;
+#use Data::ICal::Entry::Event;
 use utf8;
 
 my $browser = LWP::UserAgent->new;
@@ -19,6 +22,7 @@ my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{
 	"\x{247F}", "\x{2480}", "\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
 my @length = ( 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
 
+=pod
 my $table = $browser->post( $table_url, [ "BH" => $class_num]);
 &check( $table, $table_url);
 
@@ -27,6 +31,7 @@ my $date_table = $browser->get( $date_url);
 
 my $time_table = $browser->get( $time_url);
 &check( $time_table, $time_url);
+=cut
 
 # Now we get 3 valid tables. Although only few bytes are useful.
 # Let's parse it now.
@@ -35,7 +40,10 @@ my $time_table = $browser->get( $time_url);
 
 my @class_times;
 
-my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
+#my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
+open(my $tifh, "<:encoding(gbk)", "zxsj.htm") || die "no open tifh";
+my $time_tree = HTML::TreeBuilder->new_from_file( $tifh);
+
 # Look for a table data who has atleast 20 sons.
 # This must be the class Schedule.
 my $real_time = $time_tree->look_down( '_tag', 'td', sub{ $_[0]->content_list >= 20});
@@ -63,13 +71,15 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 # So the start and end time is stored in @class_times;
 # Now for date table.
 
-my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
+#my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
+open(my $dfh, "<:encoding(gbk)", "disp.htm") || die "no open";
+my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
 
 # Only the head is needed.
 my $real_date = $date_tree->look_down( '_tag', 'thead');
 
 # Get years out.
-my $year_list = $real_date->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/2011/});
+my $year_list = $real_date->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/哈尔滨工业大学/});
 my $year = $year_list->as_text;
 $year =~ s/.*([\d]{4}).*/$1/;
 print "year is $year.\n";
@@ -173,7 +183,10 @@ print &find_date( [ @first_monday], 28), "\n";
 
 #print "@first_monday\n". ( scalar @first_monday)."\n";
 
-my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
+#my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
+open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
+my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
+
 # Or I may need to find out tbody.
 my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );
 #print $real_table->as_text, "\n";
@@ -292,8 +305,29 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 
 # All informations are available now.
 my $vcal = Data::ICal->new();
-$vcal->add_property( method => "PUBLISH");
-$vcal->add_property( calscale => "GREGORIAN");
+# Copied from export data of Google Calender.
+$vcal->add_properties( method => "PUBLISH",
+	calscale => "GREGORIAN",
+	"X-WR-CALNAME" => "哈工大课表", # Need more specification
+	"X-WR-TIMEZONE" => "Asia/ShangHai"); # Or Harbin.
+
+my $vtz = Data::ICal::Entry::TimeZone->new();
+$vtz->add_properties( tzid => "Asia/ShangHai", 
+	"X-LIC-LOCATION" => "Asia/ShangHai"); # I think this is nothing, too.
+
+my $vtz_std = Data::ICal::Entry::TimeZone::Standard->new();
+
+$vtz_std->add_properties( tzoffsetfrom => "+0800",
+	tzoffsetto => "+0800",
+	tzname => "CST",
+	dtstart => "19700101T000000");
+
+$vtz->add_entry( $vtz_std);
+$vcal->add_entry( $vtz);
+
+print $vcal->as_string, "\n";
+
+# Envents come here.
 foreach my $i ( 0..5)
 {
 	foreach my $j ( 0..6)
@@ -316,7 +350,7 @@ foreach my $i ( 0..5)
 				sec    => 0,
 				offset => "+0800",
 			);
-			my $vevent = Data::ICal::Event->new();
+			my $vevent = Data::ICal::Entry::Event->new();
 			$vevent->add_properties(
 				dtstart  => Date::ICal->new()->ical,
 			);

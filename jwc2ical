@@ -134,50 +134,33 @@ foreach ( ( $sunday_list->content_list)[1..($sunday_list->content_list-1)])
 	push @sunday_dates, $_->as_text;
 }
 
-#print "@monday_dates\n", "@sunday_dates\n";
-
-# Combin years, months with dates of sundays and mondays.
-# Some hacks here.
-# Put months in 0..11
-foreach ( 0..@month-1)
-{
-	if ( ( $_ != 0) and ( $month[$_] == 1))
-	{
-		++$year;
-	}
-	$month[$_] += $year * 12 - 1;
-}
-#print "@month\n";
-
-my $cur = 0;
-foreach ( 0..@weeks-1)
-{
-	if ( $_ >= $month_length[$cur])
-	{
-		++$cur;
-	}
-	if ( $monday_dates[$_] != $sunday_dates[$_] - 6)
-	{
-		if ( $sunday_dates[$_] > 3)
-		{
-			$monday_dates[$_] -= 100;
-		}
-		else
-		{
-			$sunday_dates[$_] += 100;
-		}
-	}
-	$sunday_dates[$_] = &breaks( $sunday_dates[$_], $month[$cur]);
-	$monday_dates[$_] = &breaks( $monday_dates[$_], $month[$cur]);
-}
-
-#print "@monday_dates\n", "@sunday_dates\n";
-
 # We only need the first monday here.
 my @first_monday;
-push @first_monday, int( $monday_dates[0] / 10000);
-push @first_monday, int( ( $monday_dates[0] % 10000) / 100);
-push @first_monday, int( $monday_dates[0] % 100);
+
+if ( $monday_dates[0] == $sunday_dates[0] - 6 || $sunday_dates < 4)
+{
+	# Normal case
+	push @first_monday, $year;
+	push @first_monday, $month[0];
+	push @first_monday, $monday[0];
+}
+else
+{
+	# Some wrong date are present, egg pain.
+	my $month = $month[0];
+	--$month;
+	if ( $month == 0)
+	{
+		--$year;
+		$month = 12;
+	}
+
+	push @first_monday, $year;
+	push @first_monday, $month; 	 # Here is $month, not $month[0] !
+	push @first_monday, $monday[0];
+}
+
+
 # This is a test output
 print &find_date( [ @first_monday], 28), "\n";
 
@@ -424,19 +407,6 @@ sub find_date
 	push @ret, $month;
 	push @ret, $date;
 	return @ret;
-}
-
-
-# Convert months back.
-# Will be useless.
-sub breaks
-{
-	my $day = $_[0];
-	my $mon = $_[1];
-	$day += $mon * 100;
-	$mon = int( $day / 100);
-	$day %= 100;
-	$day + int( int( $mon % 12) + 1 + int( $mon / 12) * 100) * 100;
 }
 
 sub find

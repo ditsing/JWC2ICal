@@ -327,7 +327,7 @@ $vcal->add_entry( $vtz);
 
 print $vcal->as_string, "\n";
 
-# Envents come here
+# Events come here
 foreach my $i ( 0..5)
 {
 	foreach my $j ( 0..6)
@@ -337,23 +337,55 @@ foreach my $i ( 0..5)
 			my @class_info = @{$k};
 			# Find out when the first class starts.
 			my @date = &find_date( [ @first_monday], $j + ${$class_info[3]}[0] * 7 - 7);
+
 			# Until now ( 2012.1), JWC does not support a class ends at the middle of a week.
 			# So I do not condsider it.
 			my $during = ${$class_info[3]}[1] - ${$class_info[3]}[0];
 
-			my $class_time = Date::ICal->new(
-				year   => $date[0],
-				month  => $date[1],
-				day    => $date[2],
-				hour   => ${${$class_times[$i*4]}[0]}[0],
-				min    => ${${$class_times[$i*4]}[0]}[0],
-				sec    => 0,
-				offset => "+0800",
+			my $first_class_time = Date::ICal->new(
+				year   		=> $date[0],
+				month		=> $date[1],
+				day    		=> $date[2],
+				hour   		=> ${${$class_times[$i*2]}[0]}[0],
+				min    		=> ${${$class_times[$i*2]}[0]}[1],
+				sec    		=> 0,
+				offset 		=> "+0800",
 			);
+
+			my $first_class_end_time = Date::ICal->new(
+				year   		=> $date[0],
+				month		=> $date[1],
+				day    		=> $date[2],
+				hour   		=> ${${$class_times[$i*2]}[1]}[0],
+				min    		=> ${${$class_times[$i*2]}[1]}[1],
+				sec    		=> 0,
+				offset 		=> "+0800",
+			);
+
 			my $vevent = Data::ICal::Entry::Event->new();
 			$vevent->add_properties(
-				dtstart  => Date::ICal->new()->ical,
+				dtstart 	=> $first_class_time->ical,
+				dtend	  	=> $first_class_time->ical,
+				rrule 		=> "FREQ=weekly;UNTILE=$first_class_time->ical;BYDAY=NO",
+				exdate 		=> $first_class_time->ical,
+				dtsamp 		=> $first_class_time->ical,
+				description  	=> $class_info[1], 					# Teacher
+				location 	=> $class_info[0], 					# Class room
+				sequence 	=> 1,
+				status 		=> "CONFIRMED",
+				summary 	=> $class_info[2], 					# Course name
+				transp 		=> "OPAQUE",
 			);
+
+			my $valarm = Data::ICal::Alarm->new();
+			$valarm->add_properties(
+				action 		=> "DISPLAY",
+				description 	=> "This is an event reminder",
+				trigger 	=> Date::ICal()->new();
+			}
+
+			$vevent->add_entry( $valarm);
+			$vcal->add_entry( $vevent);
 		}
 	}
 }

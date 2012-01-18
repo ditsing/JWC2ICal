@@ -18,8 +18,9 @@ my $table_url = 'http://xscj.hit.edu.cn/Hitjwgl/XS/kfxqkb.asp';
 my $date_url = 'http://jwc.hit.edu.cn/jwc/displaytwo.asp?ID=202';
 my $time_url = 'http://jwc.hit.edu.cn/jwc/displaytwo.asp?ID=201';
 my @num_name = qw{ 一 二 三 四 五 六 七 八 九 十 十一 十二};
-my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{2479}", "\x{247A}", "\x{247B}", "\x{247C}", "\x{247D}", "\x{247E}",
-	"\x{247F}", "\x{2480}", "\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
+my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{2479}",
+	"\x{247A}", "\x{247B}", "\x{247C}", "\x{247D}", "\x{247E}", "\x{247F}", "\x{2480}",
+	"\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
 my @length = ( 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
 
 =pod
@@ -87,10 +88,19 @@ print "year is $year.\n";
 my @month;
 my @month_length;
 
+my %look_for;
+foreach ( qw( 月 周 星期一 星期日))
+{
+	my $name = $_;
+	$look_for{$name} = sub {
+		bless $_[0], "HTML::Element";
+		($_[0]->content_list)[0]->as_text eq $name
+	};
+}
+
 # Get months out.
-my $month_list = $real_date->look_down( '_tag', 'tr', sub { ($_[0]->content_list)[0]->as_text eq '月'});
+my $month_list = $real_date->look_down( '_tag', 'tr', $look_for{ 月});
 #print $month_list->as_text, "\n";
-#print scalar $month_list->content_list, "\n";
 
 foreach ( ($month_list->content_list)[1..($month_list->content_list-1)])
 {
@@ -98,28 +108,28 @@ foreach ( ($month_list->content_list)[1..($month_list->content_list-1)])
 	push @month_length, defined $_->attr( 'colspan') ? $_->attr( 'colspan') : 1;
 }
 
-#print "@month", "\n";
-#print "@month_length", "\n";
-foreach ( 1..@month-1)
-{
-	$month_length[$_] += $month_length[$_-1];
-}
-
 # Get weeks out.
-my $week_list = $real_date->look_down( '_tag', 'tr', sub { ( $_[0]->content_list)[0]->as_text eq '周'});
+my $week_list = $real_date->look_down( '_tag', 'tr', $look_for{ 周});
 my @weeks;
 
 foreach ( ( $week_list->content_list)[1..($week_list->content_list-1)])
 {
 	my $num = &find( [ @num_syb], $_->as_text);
-	push @weeks, $num ? $num + 100: $_->as_text;
+	push @weeks, $num ? $num + 100 : $_->as_text;
+}
+#print "@weeks", "\n";
+
+foreach ( 1..@month_length)
+{
+	$month_length[$_] += $month_length[$_-1];
 }
 
-die "Not so useful date html ". ( scalar @weeks) . " and $month_length[-1]", "\n" if @weeks != $month_length[-1];
+die "Not so useful date html ". ( scalar @weeks) . " and $month_length[-1]", "\n"
+	if @weeks != $month_length[-1];
 
 # Get dates of mondays and sundays out.
 my @monday_dates;
-my $monday_list = $real_date->look_down( '_tag', 'tr', sub { ( $_[0]->content_list)[0]->as_text eq '星期一'});
+my $monday_list = $real_date->look_down( '_tag', 'tr', $look_for{ 星期一});
 
 foreach ( ( $monday_list->content_list)[1..($monday_list->content_list-1)])
 {
@@ -127,7 +137,7 @@ foreach ( ( $monday_list->content_list)[1..($monday_list->content_list-1)])
 }
 
 my @sunday_dates;
-my $sunday_list = $real_date->look_down( '_tag', 'tr', sub { ( $_[0]->content_list)[0]->as_text eq '星期日'});
+my $sunday_list = $real_date->look_down( '_tag', 'tr', $look_for{ 星期日});
 
 foreach ( ( $sunday_list->content_list)[1..($sunday_list->content_list-1)])
 {
@@ -136,29 +146,17 @@ foreach ( ( $sunday_list->content_list)[1..($sunday_list->content_list-1)])
 
 # We only need the first monday here.
 my @first_monday;
+my $month = $month[0];
 
-if ( $monday_dates[0] == $sunday_dates[0] - 6 || $sunday_dates < 4)
-{
-	# Normal case
-	push @first_monday, $year;
-	push @first_monday, $month[0];
-	push @first_monday, $monday[0];
-}
-else
+if ( $monday_dates[0] != $sunday_dates[0] - 6 && $sunday_dates[0] > 3)
 {
 	# Some wrong date are present, egg pain.
-	my $month = $month[0];
-	--$month;
-	if ( $month == 0)
-	{
-		--$year;
-		$month = 12;
-	}
-
-	push @first_monday, $year;
-	push @first_monday, $month; 	 # Here is $month, not $month[0] !
-	push @first_monday, $monday[0];
+	--$year, $month = 12 if ( --$month == 0);
 }
+# Normal case
+push @first_monday, $year;
+push @first_monday, $month; 	 # Here is $month, not $month[0] !
+push @first_monday, $monday_dates[0];
 
 
 # This is a test output
@@ -184,81 +182,68 @@ foreach ( 1..6)
 	my $b = $_*2;
 	my $a = $b - 1;
 	my $lesson = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/($a)-($b)节/} );
-	if ( $lesson)
+	my @scope = ();
+	# The first one is "a-b节", seven days a week, so 1..7.
+	foreach ( 1..7)
 	{
-#		foreach my $data ( ($lesson->content_list)[1..(($lesson->content_list)-1)])
-		# The first one is "a-b节"
-		# Seven days a week
-		my @scope = ();
-		foreach ( 1..7)
+		my $data = ( $lesson->content_list)[$_];
+		# Some data contains empty lines, so if there is a <tr>, there is a valid class.
+		if ( $data->look_down( '_tag', 'tr'))
 		{
-			my $data = ( $lesson->content_list)[$_];
-			if ( $data->look_down( '_tag', 'tr'))
-			{
 #				print "$a, day $_: ", $data->as_text, "\n";
-				my @str;
-				my @tmp = ();
-				# They put them into a table, too. Painfully.
-				foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
-				{
-#					print "\tnow : ", $_->as_text, "\n";
-					# Classes are sperated by <hr>s in each <tr>.
-					if ( $_->look_down( '_tag', 'hr'))
-					{
-#						print "Get @tmp at $a-$b\n";
-						# Examinations are ignored and they will be processed later.
-						if ( not $tmp[0] =~ m/周考试/)
-						{
-							warn "Not expected data @tmp" if @tmp != 4;
-							++$courses{$tmp[0]};
-							my $weeks = $tmp[3];
-							warn "Not recognized weeks at $weeks" if not $weeks =~ m/(\d*)-(\d*)周/;
-							$tmp[3] = [ $1, $2];
-							push @str, [ @tmp];
-							@tmp = ();
-						}
-					}
-					else
-					{
-						# There will be two ( or more) empty lines after each '周考试' entry, egg pain.
-						if ( not $_->as_text eq "")
-						{
-							# When ARRAY @tmp has been pushed the course name,
-							# the following one is Teacher and Location.
-							if ( @tmp == 1)
-							{
-								my @str = split /\s+/, $_->as_text;
-								if ( @str != 2)
-								{
-									my $name;
-									foreach ( @str[0..@str-2])
-									{
-										$name .= $_;
-									}
-									$str[0] = $name;
-								}
-								push @tmp, $str[0];
-								push @tmp, $str[-1];
-							}
-							else
-							{
-								push @tmp, $_->as_text;
-							}
-						}
-					}
-				}
+			my @str;
+			my @tmp = ();
 
-				# The last one is not followed by a <hr>
-				if ( not $tmp[0] =~ m/周考试/)
+			# They put them into a table, too. Painfully.
+			foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
+			{
+#					print "\tnow : ", $_->as_text, "\n";
+
+				# Classes are sperated by <hr>s in each <tr>.
+				if ( $_->look_down( '_tag', 'hr'))
 				{
-					push @str, [ @tmp];
-					warn "Not expected data @tmp ". ( scalar @tmp) if @tmp != 4;
+#					print "Get @tmp at $a-$b\n";
+					&check_and_push( \@tmp, \@str);
 				}
-				push @{$scope[$_-1]}, [ @str];
+				else
+				{
+					# There will be two ( or more) empty lines after each
+					# '周考试' entry, egg pain.
+					if ( not $_->as_text eq "")
+					{
+						# When ARRAY @tmp has been pushed the course name,
+						# the following one is Teacher and Location.
+						# Such as "王忠杰 软件工程" ans "吴 锐 嵌入式"
+						if ( @tmp == 1)
+						{
+							my @names = split /\s+/, $_->as_text;
+							if ( @names != 2)
+							{
+								my $name;
+								foreach ( @names[0..@names-2])
+								{
+									$name .= $_;
+								}
+								$names[0] = $name;
+							}
+							# The first and last ones are always useful.
+							push @tmp, $names[0];
+							push @tmp, $names[-1];
+						}
+						else
+						{
+							push @tmp, $_->as_text;
+						}
+					}
+				}
 			}
+
+			# The last one is not followed by a <hr>
+			&check_and_push( \@tmp, \@str);
+			$scope[$_-1] = [ @str];
 		}
-		push @{$classes[$_-1]}, [ @scope];
 	}
+	$classes[$_-1] = [ @scope];
 }
 
 #print ( ($real_table->content_list)[6]->as_text);
@@ -289,18 +274,21 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 # All informations are available now.
 my $vcal = Data::ICal->new();
 # Copied from export data of Google Calender.
-$vcal->add_properties( method => "PUBLISH",
+$vcal->add_properties(
+	method => "PUBLISH",
 	calscale => "GREGORIAN",
 	"X-WR-CALNAME" => "哈工大课表", # Need more specification
 	"X-WR-TIMEZONE" => "Asia/ShangHai"); # Or Harbin.
 
 my $vtz = Data::ICal::Entry::TimeZone->new();
-$vtz->add_properties( tzid => "Asia/ShangHai", 
+$vtz->add_properties(
+	tzid => "Asia/ShangHai", 
 	"X-LIC-LOCATION" => "Asia/ShangHai"); # I think this is nothing, too.
 
 my $vtz_std = Data::ICal::Entry::TimeZone::Standard->new();
 
-$vtz_std->add_properties( tzoffsetfrom => "+0800",
+$vtz_std->add_properties(
+	tzoffsetfrom => "+0800",
 	tzoffsetto => "+0800",
 	tzname => "CST",
 	dtstart => "19700101T000000");
@@ -317,7 +305,7 @@ foreach my $i ( 0..5)
 	{
 		foreach my $k ( @{$classes[$i][$j]})
 		{
-			my @class_info = @{$k};
+			my @class_info = @$k;
 			# Find out when the first class starts.
 			my @date = &find_date( [ @first_monday], $j + ${$class_info[3]}[0] * 7 - 7);
 
@@ -329,8 +317,8 @@ foreach my $i ( 0..5)
 				year   		=> $date[0],
 				month		=> $date[1],
 				day    		=> $date[2],
-				hour   		=> ${${$class_times[$i*2]}[0]}[0],
-				min    		=> ${${$class_times[$i*2]}[0]}[1],
+				hour   		=> $${$class_times[$i*2]}[0][0],
+				min    		=> $${$class_times[$i*2]}[0][1],
 				sec    		=> 0,
 				offset 		=> "+0800",
 			);
@@ -339,8 +327,8 @@ foreach my $i ( 0..5)
 				year   		=> $date[0],
 				month		=> $date[1],
 				day    		=> $date[2],
-				hour   		=> ${${$class_times[$i*2]}[1]}[0],
-				min    		=> ${${$class_times[$i*2]}[1]}[1],
+				hour   		=> $${$class_times[$i*2]}[1][0],
+				min    		=> $${$class_times[$i*2]}[1][1],
 				sec    		=> 0,
 				offset 		=> "+0800",
 			);
@@ -364,8 +352,8 @@ foreach my $i ( 0..5)
 			$valarm->add_properties(
 				action 		=> "DISPLAY",
 				description 	=> "This is an event reminder",
-				trigger 	=> Date::ICal()->new();
-			}
+				trigger 	=> Date::ICal()->new(),
+			);
 
 			$vevent->add_entry( $valarm);
 			$vcal->add_entry( $vevent);
@@ -374,6 +362,21 @@ foreach my $i ( 0..5)
 }
 
 exit;
+
+sub check_and_push
+{
+	# Examinations are ignored and they will be processed later.
+	if ( not ${$_[0]}[0] =~ m/周考试/)
+	{
+		warn "Not expected data @$_[0]" if @$_[0] != 4;
+		my $weeks = ${$_[0]}[3];
+		warn "Not recognized weeks at $weeks" if not $weeks =~ m/(\d*)-(\d*)周/;
+		${$_[0]}[3] = [ $1, $2];
+
+		push @$_[1], [ @$_[0]];
+		++$courses{$$_[0][0]};
+	}
+}
 
 sub find_date
 {
@@ -412,7 +415,7 @@ sub find_date
 sub find
 {
 	my $num = $_[0];
-	foreach ( 1..@{$num})
+	foreach ( 1..@$num)
 	{
 		return $_ if ( $_[1] eq ${$num}[$_-1]);
 	}
@@ -424,7 +427,8 @@ sub check
 	my $response = $_[0];
 	my $url = $_[1];
 	die "$url error: ", $response->status_line unless $response->is_success;
-	die "Weird content type at $url -- ", $response->content_type unless $response->content_type eq 'text/html';
+	die "Weird content type at $url -- ", $response->content_type
+		unless $response->content_type eq 'text/html';
 #	print $response->content;
 
 	return $response;

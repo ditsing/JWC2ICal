@@ -6,9 +6,12 @@ use HTML::Tree;
 use HTML::TreeBuilder;
 use Encode;
 use Data::ICal;
-use Data::ICal qw(all);
+use Data::ICal::Entry qw(all);
+use Data::ICal::Entry::Event;
 use Data::ICal::Entry::TimeZone;
 use Data::ICal::Entry::TimeZone::Standard;
+use Data::ICal::Entry::Alarm::Display;
+use Date::ICal;
 #use Data::ICal::Entry::Event;
 use utf8;
 
@@ -21,7 +24,7 @@ my @num_name = qw{ 一 二 三 四 五 六 七 八 九 十 十一 十二};
 my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{2479}",
 	"\x{247A}", "\x{247B}", "\x{247C}", "\x{247D}", "\x{247E}", "\x{247F}", "\x{2480}",
 	"\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
-my @length = ( 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31);
+my @day_name = ( "MO", "TU", "WE", "TH", "FR", "ST", "SU");
 
 =pod
 my $table = $browser->post( $table_url, [ "BH" => $class_num]);
@@ -83,7 +86,7 @@ my $real_date = $date_tree->look_down( '_tag', 'thead');
 my $year_list = $real_date->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/哈尔滨工业大学/});
 my $year = $year_list->as_text;
 $year =~ s/.*([\d]{4}).*/$1/;
-print "year is $year.\n";
+#print "year is $year.\n";
 
 my @month;
 my @month_length;
@@ -160,7 +163,7 @@ push @first_monday, $monday_dates[0];
 
 
 # This is a test output
-print &find_date( [ @first_monday], 28), "\n";
+#print &find_date( [ @first_monday], 28), "\n";
 
 #print "@first_monday\n". ( scalar @first_monday)."\n";
 
@@ -174,6 +177,7 @@ my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_l
 
 my @classes;
 my %courses;
+my %courses_table;
 # @classes[lesson][day][count] represents a class. 
 # A class is made up of four lines: Course Name, Teacher, Classroom, During.
 # We do have 6 big lessons everyday.
@@ -186,18 +190,22 @@ foreach ( 1..6)
 	# The first one is "a-b节", seven days a week, so 1..7.
 	foreach ( 1..7)
 	{
+		if ( not $lesson)
+		{
+			last;
+		}
 		my $data = ( $lesson->content_list)[$_];
 		# Some data contains empty lines, so if there is a <tr>, there is a valid class.
+		my @str = ();
 		if ( $data->look_down( '_tag', 'tr'))
 		{
-#				print "$a, day $_: ", $data->as_text, "\n";
-			my @str;
+#			print "$a, day $_: ", $data->as_text, "\n";
 			my @tmp = ();
 
 			# They put them into a table, too. Painfully.
 			foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
 			{
-#					print "\tnow : ", $_->as_text, "\n";
+#				print "\tnow : ", $_->as_text, "\n";
 
 				# Classes are sperated by <hr>s in each <tr>.
 				if ( $_->look_down( '_tag', 'hr'))
@@ -208,12 +216,12 @@ foreach ( 1..6)
 				else
 				{
 					# There will be two ( or more) empty lines after each
-					# '周考试' entry, egg pain.
+					# '周考试' entry, egg pain. Ignore them.
 					if ( not $_->as_text eq "")
 					{
 						# When ARRAY @tmp has been pushed the course name,
 						# the following one is Teacher and Location.
-						# Such as "王忠杰 软件工程" ans "吴 锐 嵌入式"
+						# Such as "王忠杰 软件工程" and "吴 锐 嵌入式"
 						if ( @tmp == 1)
 						{
 							my @names = split /\s+/, $_->as_text;
@@ -240,13 +248,12 @@ foreach ( 1..6)
 
 			# The last one is not followed by a <hr>
 			&check_and_push( \@tmp, \@str);
-			$scope[$_-1] = [ @str];
 		}
+		$scope[$_-1] = [ @str];
 	}
 	$classes[$_-1] = [ @scope];
 }
 
-#print ( ($real_table->content_list)[6]->as_text);
 # Look for a row contains '考试安排'
 my $exams_table = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/考\s+试\s+安\s+排/} );
 $exams_table = $exams_table->look_down( '_tag', 'table');
@@ -256,13 +263,15 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 	if ( not $exam->as_text eq '')
 	{
 		my @exam_info = split /\s+/, $exam->as_text;
-		# Format is: Week, day, time, location, subject. 
-		print "Get @exam_info\n";
+		# Format is: week, day, time, location, subject. 
+		#print "Get @exam_info\n";
 		warn "Not expected data @exam_info" if @exam_info != 5;
 		my $time = $exam_info[2];
+
 		# Say that the start time and end time is all two digits. Like 08:00-10:00.
 		# As far as I know, HIT never starts an exam at 8:00 in the morning.
 		warn "Time format is not recognized: $time" if not $time =~ m/(\d\d):(\d\d)-(\d\d):(\d\d)/;
+		# This reg exp is NOT the same as before. See ':' and '：' ? 
 		my @time;
 		push @time, [ $1, $2], [ $3, $4];
 		# Replace the string with a reference.
@@ -272,31 +281,51 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 }
 
 # All informations are available now.
+my $tz = "Asia/Shanghai";
+my $tzset = "+0800";
+
 my $vcal = Data::ICal->new();
 # Copied from export data of Google Calender.
 $vcal->add_properties(
 	method => "PUBLISH",
 	calscale => "GREGORIAN",
-	"X-WR-CALNAME" => "哈工大课表", # Need more specification
-	"X-WR-TIMEZONE" => "Asia/ShangHai"); # Or Harbin.
+	"X-WR-CALNAME" => "哈工大${class_num}班${year}年".( $month < 6 ? "春" : "秋")."季课程表",
+	"X-WR-TIMEZONE" => $tz, 
+); # Or Harbin.
 
 my $vtz = Data::ICal::Entry::TimeZone->new();
 $vtz->add_properties(
-	tzid => "Asia/ShangHai", 
-	"X-LIC-LOCATION" => "Asia/ShangHai"); # I think this is nothing, too.
+	tzid => $tz, 
+	"X-LIC-LOCATION" => $tz,  # I think this is nothing, too.
+);
 
 my $vtz_std = Data::ICal::Entry::TimeZone::Standard->new();
 
 $vtz_std->add_properties(
-	tzoffsetfrom => "+0800",
-	tzoffsetto => "+0800",
+	tzoffsetfrom => $tzset,
+	tzoffsetto => $tzset,
 	tzname => "CST",
-	dtstart => "19700101T000000");
+	dtstart => "19700101T000000"
+);
 
 $vtz->add_entry( $vtz_std);
 $vcal->add_entry( $vtz);
 
-print $vcal->as_string, "\n";
+#print $vcal->as_string, "\n";
+
+my $first_day = Date::ICal->new(
+	year 		=> $first_monday[0],
+	month 		=> $first_monday[1],
+	day 		=> $first_monday[2],
+	offset 		=> $tzset,
+);
+
+my $now = Date::ICal->new;
+my $str_now_cst = $now->ical( offset => $tzset);
+my $str_now_utc = $now->ical;
+#my $second_day = $first_day->clone;
+#$second_day->add( day => 163);
+#print $first_day->ical( offset => $tzset), "\n", $second_day->ical( offset => $tzset), "\n";
 
 # Events come here
 foreach my $i ( 0..5)
@@ -306,60 +335,67 @@ foreach my $i ( 0..5)
 		foreach my $k ( @{$classes[$i][$j]})
 		{
 			my @class_info = @$k;
-			# Find out when the first class starts.
-			my @date = &find_date( [ @first_monday], $j + ${$class_info[3]}[0] * 7 - 7);
+			print "Adding @class_info\n";
 
 			# Until now ( 2012.1), JWC does not support a class ends at the middle of a week.
 			# So I do not condsider it.
-			my $during = ${$class_info[3]}[1] - ${$class_info[3]}[0];
 
-			my $first_class_time = Date::ICal->new(
-				year   		=> $date[0],
-				month		=> $date[1],
-				day    		=> $date[2],
-				hour   		=> $${$class_times[$i*2]}[0][0],
-				min    		=> $${$class_times[$i*2]}[0][1],
+			# Find out when the first class starts.
+			my $first_class_start_time = $first_day->clone;
+			my $first_class_end_time = $first_day->clone;
+			my $last_class = $first_day->clone;
+
+			$first_class_start_time->add(
+				day    		=> $class_info[3]->[0] * 7 - 7,
+				hour   		=> $class_times[$i*2]->[0][0],
+				min    		=> $class_times[$i*2]->[0][1],
 				sec    		=> 0,
-				offset 		=> "+0800",
 			);
 
-			my $first_class_end_time = Date::ICal->new(
-				year   		=> $date[0],
-				month		=> $date[1],
-				day    		=> $date[2],
-				hour   		=> $${$class_times[$i*2]}[1][0],
-				min    		=> $${$class_times[$i*2]}[1][1],
+			$first_class_end_time->add(
+				day    		=> $class_info[3]->[0] * 7 - 7,
+				hour   		=> $class_times[$i*2+1]->[1][0],
+				min    		=> $class_times[$i*2+1]->[1][1],
 				sec    		=> 0,
-				offset 		=> "+0800",
 			);
 
-			my $vevent = Data::ICal::Entry::Event->new();
+			my $class_count = $class_info[3][1] - $class_info[3][0] + 1;
+			my $str_start = $first_class_start_time->ical( offset => $tzset);
+			my $str_end = $first_class_end_time->ical( offset => $tzset);
+
+			my $vevent = Data::ICal::Entry::Event->new;
 			$vevent->add_properties(
-				dtstart 	=> $first_class_time->ical,
-				dtend	  	=> $first_class_time->ical,
-				rrule 		=> "FREQ=weekly;UNTILE=$first_class_time->ical;BYDAY=NO",
-				exdate 		=> $first_class_time->ical,
-				dtsamp 		=> $first_class_time->ical,
-				description  	=> $class_info[1], 					# Teacher
-				location 	=> $class_info[0], 					# Class room
+				# RFC 2445 said, dtstart/end with rrule must specify tzid
+				dtstart 	=> [ $str_start, { tzid => $tz}],
+				dtend	  	=> [ $str_end, { tzid => $tz}],
+				rrule 		=> "FREQ=weekly;COUNT=$class_count;BYDAY=$day_name[$j]",
+				exdate 		=> [ $str_now_cst, { tzid => $tz}],			# Now
+				dtstamp		=> $str_now_utc, 
+				created  	=> $str_now_utc,
+				description  	=> "Teacher: ".$class_info[1], 				# Teacher
+				"last-modified" => $str_now_utc,
+				location 	=> $class_info[2], 					# Class room
 				sequence 	=> 1,
 				status 		=> "CONFIRMED",
-				summary 	=> $class_info[2], 					# Course name
-				transp 		=> "OPAQUE",
+				summary 	=> $class_info[0], 					# Course name
+				transp 		=> "OPAQUE", 						# What is it ? 
 			);
 
-			my $valarm = Data::ICal::Alarm->new();
+			my $valarm = Data::ICal::Entry::Alarm::Display->new();
 			$valarm->add_properties(
-				action 		=> "DISPLAY",
 				description 	=> "This is an event reminder",
-				trigger 	=> Date::ICal()->new(),
+				trigger 	=> "-P0DT0H10M0S", 					# That means -10 mins.
 			);
 
 			$vevent->add_entry( $valarm);
 			$vcal->add_entry( $vevent);
+			last;
 		}
 	}
+	last;
 }
+
+print "\n\n\n", $vcal->as_string( crlf => "\n"), "\n";
 
 exit;
 
@@ -368,48 +404,19 @@ sub check_and_push
 	# Examinations are ignored and they will be processed later.
 	if ( not ${$_[0]}[0] =~ m/周考试/)
 	{
-		warn "Not expected data @$_[0]" if @$_[0] != 4;
+		warn "Not expected data @{$_[0]}" if @{$_[0]} != 4;
 		my $weeks = ${$_[0]}[3];
 		warn "Not recognized weeks at $weeks" if not $weeks =~ m/(\d*)-(\d*)周/;
 		${$_[0]}[3] = [ $1, $2];
 
-		push @$_[1], [ @$_[0]];
-		++$courses{$$_[0][0]};
-	}
-}
-
-sub find_date
-{
-	my $first_day = $_[0];
-	my $year = ${$first_day}[0];
-	my $month = ${$first_day}[1];
-	my $date = ${$first_day}[2];
-	my $day = $_[1];
-	$date += $day;
-#	print "y: $year m: $month d: $date w: $week day: $day\n";
-
-	my @ret;
-	my $found = undef;
-	while ( !$found)
-	{
-		my $offset = $length[$month-1];
-		++$offset if ( $month == 2 && $year % 4 == 0 && ( $year % 100 != 0 || $year % 400 == 0));
-		if ( $date >= $offset)
+		push @{$_[1]}, [ @{$_[0]}];
+		if ( not exists $courses_table{${$_[0]}[0]})
 		{
-			$date -= $offset;
-			++$month;
-			$month = 1, ++$year if $month == 13;
+			$courses_table{${$_[0]}[0]} = keys %courses_table;
 		}
-		else
-		{
-			$found = 1;
-		}
+		++$courses{${$_[0]}[0]};
+		@{$_[0]} = ();
 	}
-
-	push @ret, $year;
-	push @ret, $month;
-	push @ret, $date;
-	return @ret;
 }
 
 sub find

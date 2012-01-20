@@ -24,7 +24,7 @@ my @num_name = qw{ 一 二 三 四 五 六 七 八 九 十 十一 十二};
 my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{2479}",
 	"\x{247A}", "\x{247B}", "\x{247C}", "\x{247D}", "\x{247E}", "\x{247F}", "\x{2480}",
 	"\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
-my @day_name = ( "MO", "TU", "WE", "TH", "FR", "ST", "SU");
+my @day_name = ( "MO", "TU", "WE", "TH", "FR", "SA", "SU");
 
 =pod
 my $table = $browser->post( $table_url, [ "BH" => $class_num]);
@@ -179,79 +179,81 @@ my @classes;
 my %courses;
 my %courses_table;
 # @classes[lesson][day][count] represents a class. 
-# A class is made up of four lines: Course Name, Teacher, Classroom, During.
+# A class is made up of four lines: Course Name, Teacher, Classroom, During, Date, Time.
+# During means from week a to week b, Date means which day of the week.
+# Time means begin and end times, in the formate ( aa:bb, cc:dd).
 # We do have 6 big lessons everyday.
-foreach ( 1..6)
+foreach my $i ( 1..6)
 {
-	my $b = $_*2;
+	my $b = $i*2;
 	my $a = $b - 1;
 	my $lesson = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/($a)-($b)节/} );
 	my @scope = ();
 	# The first one is "a-b节", seven days a week, so 1..7.
-	foreach ( 1..7)
+	if ( $lesson)
 	{
-		if ( not $lesson)
+		foreach my $j ( 1..7)
 		{
-			last;
-		}
-		my $data = ( $lesson->content_list)[$_];
-		# Some data contains empty lines, so if there is a <tr>, there is a valid class.
-		my @str = ();
-		if ( $data->look_down( '_tag', 'tr'))
-		{
-#			print "$a, day $_: ", $data->as_text, "\n";
-			my @tmp = ();
+			my $data = ( $lesson->content_list)[$j];
+			my @str = ();
 
-			# They put them into a table, too. Painfully.
-			foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
+			# Some data contains empty lines, so if there is a <tr>, there is a valid class.
+			if ( $data->look_down( '_tag', 'tr'))
 			{
-#				print "\tnow : ", $_->as_text, "\n";
+#				print "$a, day $j: ", $data->as_text, "\n";
+				my @tmp = ();
 
-				# Classes are sperated by <hr>s in each <tr>.
-				if ( $_->look_down( '_tag', 'hr'))
+				# They put them into a table, too. Painfully.
+				foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
 				{
-#					print "Get @tmp at $a-$b\n";
-					&check_and_push( \@tmp, \@str);
-				}
-				else
-				{
-					# There will be two ( or more) empty lines after each
-					# '周考试' entry, egg pain. Ignore them.
-					if ( not $_->as_text eq "")
+#					print "\tnow : ", $_->as_text, "\n";
+
+					# Classes are sperated by <hr>s in each <tr>.
+					if ( $_->look_down( '_tag', 'hr'))
 					{
-						# When ARRAY @tmp has been pushed the course name,
-						# the following one is Teacher and Location.
-						# Such as "王忠杰 软件工程" and "吴 锐 嵌入式"
-						if ( @tmp == 1)
+#						print "Get @tmp at $a-$b\n";
+						&check_and_push( \@tmp, \@str, $j - 1, $i - 1);
+					}
+					else
+					{
+						# There will be two ( or more) empty lines after each
+						# '周考试' entry, egg pain. Ignore them.
+						if ( not $_->as_text eq "")
 						{
-							my @names = split /\s+/, $_->as_text;
-							if ( @names != 2)
+							# When ARRAY @tmp has been pushed the course name,
+							# the following one is Teacher and Location.
+							# Such as "王忠杰 软件工程" and "吴 锐 嵌入式"
+							if ( @tmp == 1)
 							{
-								my $name;
-								foreach ( @names[0..@names-2])
+								my @names = split /\s+/, $_->as_text;
+								if ( @names != 2)
 								{
-									$name .= $_;
+									my $name;
+									foreach ( @names[0..@names-2])
+									{
+										$name .= $_;
+									}
+									$names[0] = $name;
 								}
-								$names[0] = $name;
+								# The first and last ones are always useful.
+								push @tmp, $names[0];
+								push @tmp, $names[-1];
 							}
-							# The first and last ones are always useful.
-							push @tmp, $names[0];
-							push @tmp, $names[-1];
-						}
-						else
-						{
-							push @tmp, $_->as_text;
+							else
+							{
+								push @tmp, $_->as_text;
+							}
 						}
 					}
 				}
-			}
 
-			# The last one is not followed by a <hr>
-			&check_and_push( \@tmp, \@str);
+				# The last one is not followed by a <hr>
+				&check_and_push( \@tmp, \@str, $j - 1, $i - 1);
+			}
+			$scope[$j-1] = [ @str];
 		}
-		$scope[$_-1] = [ @str];
 	}
-	$classes[$_-1] = [ @scope];
+	$classes[$i-1] = [ @scope];
 }
 
 # Look for a row contains '考试安排'
@@ -263,25 +265,33 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 	if ( not $exam->as_text eq '')
 	{
 		my @exam_info = split /\s+/, $exam->as_text;
-		# Format is: week, day, time, location, subject. 
+		# Format is: week, date, time, location, subject. 
 		#print "Get @exam_info\n";
 		warn "Not expected data @exam_info" if @exam_info != 5;
+
+		$exam_info[0] =~ s/第(\d*)周/$1/ or warn "No accure week";
+		$exam_info[1] =~ s/周(\d*)/$1/ or warn "No accure word on date";
+		$exam_info[1] = &find( [ @num_name], $exam_info[1]) or warn "No accure date";
+
 		my $time = $exam_info[2];
 
-		# Say that the start time and end time is all two digits. Like 08:00-10:00.
+		# Say that the start time and end time are all two digits. Like 08:00-10:00.
 		# As far as I know, HIT never starts an exam at 8:00 in the morning.
-		warn "Time format is not recognized: $time" if not $time =~ m/(\d\d):(\d\d)-(\d\d):(\d\d)/;
+		$time =~ m/(\d\d):(\d\d)-(\d\d):(\d\d)/ or warn "Time format is not recognized: $time";
 		# This reg exp is NOT the same as before. See ':' and '：' ? 
 		my @time;
 		push @time, [ $1, $2], [ $3, $4];
 		# Replace the string with a reference.
-		$exam_info[2] = [ @time];
+#		$exam_info[2] = [ @time];
+		$exam_info[2] = [ [$1, $2], [ $3, $4]];
+
+		$exam_info[4] .= "考试";
 		push @exams, [ @exam_info];
 	}
 }
 
 # All informations are available now.
-my $tz = "Asia/Shanghai";
+my $tz = "Asia/Shanghai"; # Or Harbin.
 my $tzset = "+0800";
 
 my $vcal = Data::ICal->new();
@@ -291,7 +301,7 @@ $vcal->add_properties(
 	calscale => "GREGORIAN",
 	"X-WR-CALNAME" => "哈工大${class_num}班${year}年".( $month < 6 ? "春" : "秋")."季课程表",
 	"X-WR-TIMEZONE" => $tz, 
-); # Or Harbin.
+);
 
 my $vtz = Data::ICal::Entry::TimeZone->new();
 $vtz->add_properties(
@@ -335,7 +345,7 @@ foreach my $i ( 0..5)
 		foreach my $k ( @{$classes[$i][$j]})
 		{
 			my @class_info = @$k;
-			print "Adding @class_info\n";
+			print "Adding $class_info[0] from $class_info[3]->[0] to $class_info[3]->[1] week of $i th class on $day_name[$j]\n";
 
 			# Until now ( 2012.1), JWC does not support a class ends at the middle of a week.
 			# So I do not condsider it.
@@ -346,14 +356,14 @@ foreach my $i ( 0..5)
 			my $last_class = $first_day->clone;
 
 			$first_class_start_time->add(
-				day    		=> $class_info[3]->[0] * 7 - 7,
+				day    		=> $class_info[3]->[0] * 7 - 7 + $j,
 				hour   		=> $class_times[$i*2]->[0][0],
 				min    		=> $class_times[$i*2]->[0][1],
 				sec    		=> 0,
 			);
 
 			$first_class_end_time->add(
-				day    		=> $class_info[3]->[0] * 7 - 7,
+				day    		=> $class_info[3]->[0] * 7 - 7 + $j,
 				hour   		=> $class_times[$i*2+1]->[1][0],
 				min    		=> $class_times[$i*2+1]->[1][1],
 				sec    		=> 0,
@@ -368,7 +378,7 @@ foreach my $i ( 0..5)
 				# RFC 2445 said, dtstart/end with rrule must specify tzid
 				dtstart 	=> [ $str_start, { tzid => $tz}],
 				dtend	  	=> [ $str_end, { tzid => $tz}],
-				rrule 		=> "FREQ=weekly;COUNT=$class_count;BYDAY=$day_name[$j]",
+				rrule 		=> "FREQ=WEEKLY;COUNT=$class_count;BYDAY=$day_name[$j]",
 				exdate 		=> [ $str_now_cst, { tzid => $tz}],			# Now
 				dtstamp		=> $str_now_utc, 
 				created  	=> $str_now_utc,
@@ -389,13 +399,56 @@ foreach my $i ( 0..5)
 
 			$vevent->add_entry( $valarm);
 			$vcal->add_entry( $vevent);
-			last;
 		}
 	}
-	last;
 }
 
-print "\n\n\n", $vcal->as_string( crlf => "\n"), "\n";
+foreach my $exam_info ( @exams)
+{
+	my $exam_start_time = $first_day->clone;
+
+	$exam_start_time->add(
+		day 	=> $exam_info->[0] * 7 - 7 + $exam_info->[1] - 1,
+		hour 	=> $exam_info->[2][0][0],
+		min 	=> $exam_info->[2][0][1],
+		sec 	=> 0,
+	);
+
+	my $exam_end_time = $first_day->clone;
+	$exam_end_time->add(
+		day 	=> $exam_info->[0] * 7 - 7 + $exam_info->[1] - 1,
+		hour 	=> $exam_info->[2][1][0],
+		min 	=> $exam_info->[2][1][1],
+		sec 	=> 0,
+	);
+
+
+	my $vexam = Data::ICal::Entry::Event->new;
+	$vexam->add_properties(
+		dtstart 	=> $exam_start_time->ical,
+		dtend	  	=> $exam_end_time->ical,
+		dtstamp		=> $str_now_utc, 
+		created  	=> $str_now_utc,
+		description  	=> "考试",
+		"last-modified" => $str_now_utc,
+		location 	=> $$exam_info[3], 					# Class room
+		sequence 	=> 1,
+		status 		=> "CONFIRMED",
+		summary 	=> $$exam_info[4], 					# Subject name
+		transp 		=> "OPAQUE", 						# What is it ? 
+	);
+
+	my $valarm = Data::ICal::Entry::Alarm::Display->new();
+	$valarm->add_properties(
+		description 	=> "This is an event reminder",
+		trigger 	=> "-P0DT0H10M0S", 					# That means -10 mins.
+	);
+
+	$vexam->add_entry( $valarm);
+	$vcal->add_entry( $vexam);
+}
+
+print $vcal->as_string( crlf => "\n"), "\n";
 
 exit;
 
@@ -408,8 +461,10 @@ sub check_and_push
 		my $weeks = ${$_[0]}[3];
 		warn "Not recognized weeks at $weeks" if not $weeks =~ m/(\d*)-(\d*)周/;
 		${$_[0]}[3] = [ $1, $2];
+		push @{$_[0]}, $_[2], [ $class_times[$_[3]*2]->[0], $class_times[$_[3]*2+1]->[1]];
 
 		push @{$_[1]}, [ @{$_[0]}];
+
 		if ( not exists $courses_table{${$_[0]}[0]})
 		{
 			$courses_table{${$_[0]}[0]} = keys %courses_table;

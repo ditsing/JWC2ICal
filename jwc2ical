@@ -12,11 +12,10 @@ use Data::ICal::Entry::TimeZone;
 use Data::ICal::Entry::TimeZone::Standard;
 use Data::ICal::Entry::Alarm::Display;
 use Date::ICal;
-#use Data::ICal::Entry::Event;
 use utf8;
 
 my $browser = LWP::UserAgent->new;
-my $class_num = '0903101';
+my $class_num = $ARGV[0];
 my $table_url = 'http://xscj.hit.edu.cn/Hitjwgl/XS/kfxqkb.asp';
 my $date_url = 'http://jwc.hit.edu.cn/jwc/displaytwo.asp?ID=202';
 my $time_url = 'http://jwc.hit.edu.cn/jwc/displaytwo.asp?ID=201';
@@ -26,7 +25,6 @@ my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{
 	"\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
 my @day_name = ( "MO", "TU", "WE", "TH", "FR", "SA", "SU");
 
-=pod
 my $table = $browser->post( $table_url, [ "BH" => $class_num]);
 &check( $table, $table_url);
 
@@ -35,7 +33,6 @@ my $date_table = $browser->get( $date_url);
 
 my $time_table = $browser->get( $time_url);
 &check( $time_table, $time_url);
-=cut
 
 # Now we get 3 valid tables. Although only few bytes are useful.
 # Let's parse it now.
@@ -44,9 +41,9 @@ my $time_table = $browser->get( $time_url);
 
 my @class_times;
 
-#my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
-open(my $tifh, "<:encoding(gbk)", "zxsj.htm") || die "no open tifh";
-my $time_tree = HTML::TreeBuilder->new_from_file( $tifh);
+my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
+#open(my $tifh, "<:encoding(gbk)", "zxsj.htm") || die "no open tifh";
+#my $time_tree = HTML::TreeBuilder->new_from_file( $tifh);
 
 # Look for a table data who has atleast 20 sons.
 # This must be the class Schedule.
@@ -75,9 +72,9 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 # So the start and end time is stored in @class_times;
 # Now for date table.
 
-#my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
-open(my $dfh, "<:encoding(gbk)", "disp.htm") || die "no open";
-my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
+my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
+#open(my $dfh, "<:encoding(gbk)", "disp.htm") || die "no open";
+#my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
 
 # Only the head is needed.
 my $real_date = $date_tree->look_down( '_tag', 'thead');
@@ -167,9 +164,9 @@ push @first_monday, $monday_dates[0];
 
 #print "@first_monday\n". ( scalar @first_monday)."\n";
 
-#my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
-open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
-my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
+my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
+#open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
+#my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
 
 # Or I may need to find out tbody.
 my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );

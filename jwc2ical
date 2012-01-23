@@ -1,4 +1,8 @@
 #!/usr/bin/perl -w
+# Usage
+# jwc2ical [class_num]
+# Examples: 	jwc2ical 0903101
+# 		jwc2ical 0903102 > 0903103.ics
 
 use strict;
 use LWP;

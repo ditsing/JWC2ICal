@@ -29,14 +29,14 @@ my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{
 	"\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
 my @day_name = ( "MO", "TU", "WE", "TH", "FR", "SA", "SU");
 
-my $table = $browser->post( $table_url, [ "BH" => $class_num]);
-&check( $table, $table_url);
+#my $table = $browser->post( $table_url, [ "BH" => $class_num]);
+#&check( $table, $table_url);
 
-my $date_table = $browser->get( $date_url);
-&check( $date_table, $date_url);
+#my $date_table = $browser->get( $date_url);
+#&check( $date_table, $date_url);
 
-my $time_table = $browser->get( $time_url);
-&check( $time_table, $time_url);
+#my $time_table = $browser->get( $time_url);
+#&check( $time_table, $time_url);
 
 # Now we get 3 valid tables. Although only few bytes are useful.
 # Let's parse it now.
@@ -45,9 +45,9 @@ my $time_table = $browser->get( $time_url);
 
 my @class_times;
 
-my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
-#open(my $tifh, "<:encoding(gbk)", "zxsj.htm") || die "no open tifh";
-#my $time_tree = HTML::TreeBuilder->new_from_file( $tifh);
+#my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
+open(my $tifh, "<:encoding(gbk)", "zxsj.htm") || die "no open tifh";
+my $time_tree = HTML::TreeBuilder->new_from_file( $tifh);
 
 # Look for a table data who has atleast 20 sons.
 # This must be the class Schedule.
@@ -76,9 +76,9 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 # So the start and end time is stored in @class_times;
 # Now for date table.
 
-my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
-#open(my $dfh, "<:encoding(gbk)", "disp.htm") || die "no open";
-#my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
+#my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
+open(my $dfh, "<:encoding(gbk)", "disp.htm") || die "no open";
+my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
 
 # Only the head is needed.
 my $real_date = $date_tree->look_down( '_tag', 'thead');
@@ -168,9 +168,9 @@ push @first_monday, $monday_dates[0];
 
 #print "@first_monday\n". ( scalar @first_monday)."\n";
 
-my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
-#open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
-#my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
+#my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
+open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
+my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
 
 # Or I may need to find out tbody.
 my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );
@@ -178,10 +178,13 @@ my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_l
 
 my @classes;
 my %courses;
-my %courses_tabl;
-# @classes[lesson][day][count] represents a class. 
-# A class is made up of four lines: Course Name, Teacher, Classroom, During, Date, Time.
-# During means from week a to week b, Date means which day of the week.
+my %courses_table;
+#deprecated # @classes[lesson][day][count] represents a class. 
+
+# A class is made up of six lines: Course Name, Teacher, Classroom, During, Date, Time.
+# @classes[count] represents a class, like $classes[0]{teacher}.
+# During means from week a to week b.
+# Date means which day of the week.
 # Time means begin and end times, in the formate ( aa:bb, cc:dd).
 # We do have 6 big lessons everyday.
 foreach my $i ( 1..6)
@@ -189,20 +192,18 @@ foreach my $i ( 1..6)
 	my $b = $i*2;
 	my $a = $b - 1;
 	my $lesson = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/($a)-($b)节/} );
-	my @scope = ();
 	# The first one is "a-b节", seven days a week, so 1..7.
 	if ( $lesson)
 	{
 		foreach my $j ( 1..7)
 		{
 			my $data = ( $lesson->content_list)[$j];
-			my @str = ();
 
 			# Some data contains empty lines, so if there is a <tr>, there is a valid class.
 			if ( $data->look_down( '_tag', 'tr'))
 			{
 #				print "$a, day $j: ", $data->as_text, "\n";
-				my @tmp = ();
+				my @class_info = ();
 
 				# They put them into a table, too. Painfully.
 				foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
@@ -212,8 +213,8 @@ foreach my $i ( 1..6)
 					# Classes are sperated by <hr>s in each <tr>.
 					if ( $_->look_down( '_tag', 'hr'))
 					{
-#						print "Get @tmp at $a-$b\n";
-						&check_and_push( \@tmp, \@str, $j - 1, $i - 1);
+#						print "Get @class_info at $a-$b\n";
+						&check_and_push( \@class_info, \@classes, $j - 1, $i - 1);
 					}
 					else
 					{
@@ -221,10 +222,10 @@ foreach my $i ( 1..6)
 						# '周考试' entry, egg pain. Ignore them.
 						if ( not $_->as_text eq "")
 						{
-							# When ARRAY @tmp has been pushed the course name,
+							# When ARRAY @class_info has been pushed the course name,
 							# the following one is Teacher and Location.
 							# Such as "王忠杰 软件工程" and "吴 锐 嵌入式"
-							if ( @tmp == 1)
+							if ( @class_info == 1)
 							{
 								my @names = split /\s+/, $_->as_text;
 								if ( @names != 2)
@@ -237,35 +238,33 @@ foreach my $i ( 1..6)
 									$names[0] = $name;
 								}
 								# The first and last ones are always useful.
-								push @tmp, $names[0];
-								push @tmp, $names[-1];
+								push @class_info, $names[0];
+								push @class_info, $names[-1];
 							}
 							else
 							{
-								push @tmp, $_->as_text;
+								push @class_info, $_->as_text;
 							}
 						}
 					}
 				}
 
 				# The last one is not followed by a <hr>
-				&check_and_push( \@tmp, \@str, $j - 1, $i - 1);
+				&check_and_push( \@class_info, \@classes, $j - 1, $i - 1);
 			}
-			$scope[$j-1] = [ @str];
 		}
 	}
-	$classes[$i-1] = [ @scope];
 }
 
 # Look for a row contains '考试安排'
 my $exams_table = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/考\s+试\s+安\s+排/} );
 $exams_table = $exams_table->look_down( '_tag', 'table');
 my @exams;
-foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
+foreach my $exam_node ( $exams_table->look_down( '_tag', 'td'))
 {
-	if ( not $exam->as_text eq '')
+	if ( not $exam_node->as_text eq '')
 	{
-		my @exam_info = split /\s+/, $exam->as_text;
+		my @exam_info = split /\s+/, $exam_node->as_text;
 		# Format is: week, date, time, location, subject. 
 		#print "Get @exam_info\n";
 		warn "Not expected data @exam_info" if @exam_info != 5;
@@ -280,14 +279,20 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 		# As far as I know, HIT never starts an exam at 8:00 in the morning.
 		$time =~ m/(\d\d):(\d\d)-(\d\d):(\d\d)/ or warn "Time format is not recognized: $time";
 		# This reg exp is NOT the same as before. See ':' and '：' ? 
-		my @time;
-		push @time, [ $1, $2], [ $3, $4];
+		
 		# Replace the string with a reference.
-#		$exam_info[2] = [ @time];
 		$exam_info[2] = [ [$1, $2], [ $3, $4]];
 
 		$exam_info[4] .= "考试";
-		push @exams, [ @exam_info];
+		my $exam = {
+			week 		=> $exam_info[0],
+			date 		=> $exam_info[1],
+			s_time 		=> $exam_info[2][0],
+			t_time 		=> $exam_info[2][1],
+			location 	=> $exam_info[3],
+			name 		=> $exam_info[4],
+		};
+		push @exams, $exam;
 	}
 }
 
@@ -339,87 +344,82 @@ my $str_now_utc = $now->ical;
 #print $first_day->ical( offset => $tzset), "\n", $second_day->ical( offset => $tzset), "\n";
 
 # Events come here
-foreach my $i ( 0..5)
+foreach ( @classes)
 {
-	foreach my $j ( 0..6)
-	{
-		foreach my $k ( @{$classes[$i][$j]})
-		{
-			my @class_info = @$k;
-			print "Adding $class_info[0] from $class_info[3]->[0] to $class_info[3]->[1] week of $i th class on $day_name[$j]\n";
+	my %class_info = %$_;
+	print "Adding $class_info{name} from @{$class_info{s_time}} to @{$class_info{t_time}} clock ".
+	"at $class_info{week} week during $class_info{during} weeks on $day_name[$class_info{date}]\n";
 
-			# Until now ( 2012.1), JWC does not support a class ends at the middle of a week.
-			# So I do not condsider it.
+	# Until now ( 2012.1), JWC does not support a class ends at the middle of a week.
+	# So I do not condsider it.
 
-			# Find out when the first class starts.
-			my $first_class_start_time = $first_day->clone;
-			my $first_class_end_time = $first_day->clone;
-			my $last_class = $first_day->clone;
+	# Find out when the first class starts.
+	my $first_class_start_time = $first_day->clone;
+	my $first_class_end_time = $first_day->clone;
 
-			$first_class_start_time->add(
-				day    		=> $class_info[3]->[0] * 7 - 7 + $j,
-				hour   		=> $class_times[$i*2]->[0][0],
-				min    		=> $class_times[$i*2]->[0][1],
-				sec    		=> 0,
-			);
+	$first_class_start_time->add(
+		day    		=> $class_info{week} * 7 - 7 + $class_info{date},
+		hour   		=> $class_info{s_time}[0],
+		min    		=> $class_info{s_time}[1],
+		sec    		=> 0,
+	);
 
-			$first_class_end_time->add(
-				day    		=> $class_info[3]->[0] * 7 - 7 + $j,
-				hour   		=> $class_times[$i*2+1]->[1][0],
-				min    		=> $class_times[$i*2+1]->[1][1],
-				sec    		=> 0,
-			);
+	$first_class_end_time->add(
+		day    		=> $class_info{week} * 7 - 7 + $class_info{date},
+		hour   		=> $class_info{t_time}[0],
+		min    		=> $class_info{t_time}[1],
+		sec    		=> 0,
+	);
 
-			my $class_count = $class_info[3][1] - $class_info[3][0] + 1;
-			my $str_start = $first_class_start_time->ical( offset => $tzset);
-			my $str_end = $first_class_end_time->ical( offset => $tzset);
+	my $class_count = $class_info{during};
+	my $str_start = $first_class_start_time->ical( offset => $tzset);
+	my $str_end = $first_class_end_time->ical( offset => $tzset);
 
-			my $vevent = Data::ICal::Entry::Event->new;
-			$vevent->add_properties(
-				# RFC 2445 said, dtstart/end with rrule must specify tzid
-				dtstart 	=> [ $str_start, { tzid => $tz}],
-				dtend	  	=> [ $str_end, { tzid => $tz}],
-				rrule 		=> "FREQ=WEEKLY;COUNT=$class_count;BYDAY=$day_name[$j]",
-				exdate 		=> [ $str_now_cst, { tzid => $tz}],			# Now
-				dtstamp		=> $str_now_utc, 
-				created  	=> $str_now_utc,
-				description  	=> "Teacher: ".$class_info[1], 				# Teacher
-				"last-modified" => $str_now_utc,
-				location 	=> $class_info[2], 					# Class room
-				sequence 	=> 1,
-				status 		=> "CONFIRMED",
-				summary 	=> $class_info[0], 					# Course name
-				transp 		=> "OPAQUE", 						# What is it ? 
-			);
+	my $vevent = Data::ICal::Entry::Event->new;
+	$vevent->add_properties(
+		# RFC 2445 said, dtstart/end with rrule must specify tzid
+		dtstart 	=> [ $str_start, { tzid => $tz}],
+		dtend	  	=> [ $str_end, { tzid => $tz}],
+		rrule 		=> "FREQ=WEEKLY;COUNT=$class_count;BYDAY=$day_name[$class_info{date}]",
+		exdate 		=> [ $str_now_cst, { tzid => $tz}],			# Now
+		dtstamp		=> $str_now_utc, 
+		created  	=> $str_now_utc,
+		description  	=> "Teacher: ".$class_info{teacher},			# Teacher
+		"last-modified" => $str_now_utc,
+		location 	=> $class_info{location},				# Class room
+		sequence 	=> 1,
+		status 		=> "CONFIRMED",
+		summary 	=> $class_info{name},					# Course name
+		transp 		=> "OPAQUE", 						# What is it ? 
+	);
 
-			my $valarm = Data::ICal::Entry::Alarm::Display->new();
-			$valarm->add_properties(
-				description 	=> "This is an event reminder",
-				trigger 	=> "-P0DT0H10M0S", 					# That means -10 mins.
-			);
+	my $valarm = Data::ICal::Entry::Alarm::Display->new();
+	$valarm->add_properties(
+		description 	=> "This is an event reminder",
+		trigger 	=> "-P0DT0H10M0S", 					# That means -10 mins.
+	);
 
-			$vevent->add_entry( $valarm);
-			$vcal->add_entry( $vevent);
-		}
-	}
+	$vevent->add_entry( $valarm);
+	$vcal->add_entry( $vevent);
 }
 
-foreach my $exam_info ( @exams)
+foreach ( @exams)
 {
+	my %exam_info = %$_;
 	my $exam_start_time = $first_day->clone;
 
 	$exam_start_time->add(
-		day 	=> $exam_info->[0] * 7 - 7 + $exam_info->[1] - 1,
-		hour 	=> $exam_info->[2][0][0],
-		min 	=> $exam_info->[2][0][1],
+		day 	=> $exam_info{week} * 7 - 7 + $exam_info{date} - 1,
+		hour 	=> $exam_info{s_time}[0],
+		min 	=> $exam_info{s_time}[1],
 		sec 	=> 0,
 	);
 
 	my $exam_end_time = $first_day->clone;
 	$exam_end_time->add(
-		day 	=> $exam_info->[0] * 7 - 7 + $exam_info->[1] - 1,
-		hour 	=> $exam_info->[2][1][0],
-		min 	=> $exam_info->[2][1][1],
+		day 	=> $exam_info{week} * 7 - 7 + $exam_info{date} - 1,
+		hour 	=> $exam_info{t_time}[0],
+		min 	=> $exam_info{t_time}[1],
 		sec 	=> 0,
 	);
 
@@ -432,10 +432,10 @@ foreach my $exam_info ( @exams)
 		created  	=> $str_now_utc,
 		description  	=> "考试",
 		"last-modified" => $str_now_utc,
-		location 	=> $$exam_info[3], 					# Class room
+		location 	=> $exam_info{location},				# Class room
 		sequence 	=> 1,
 		status 		=> "CONFIRMED",
-		summary 	=> $$exam_info[4], 					# Subject name
+		summary 	=> $exam_info{name}, 					# Subject name
 		transp 		=> "OPAQUE", 						# What is it ? 
 	);
 
@@ -456,21 +456,33 @@ exit;
 sub check_and_push
 {
 	# Examinations are ignored and they will be processed later.
-	if ( not ${$_[0]}[0] =~ m/周考试/)
+	if ( not $_[0][0] =~ m/周考试/)
 	{
 		warn "Not expected data @{$_[0]}" if @{$_[0]} != 4;
-		my $weeks = ${$_[0]}[3];
+		my $weeks = $_[0][3];
 		warn "Not recognized weeks at $weeks" if not $weeks =~ m/(\d*)-(\d*)周/;
-		${$_[0]}[3] = [ $1, $2];
-		push @{$_[0]}, $_[2], [ $class_times[$_[3]*2]->[0], $class_times[$_[3]*2+1]->[1]];
+		$_[0][3] = [ $1, $2];
+		push @{$_[0]}, $_[2], [ $class_times[$_[3]*2][0], $class_times[$_[3]*2+1][1]];
 
-		push @{$_[1]}, [ @{$_[0]}];
+		#A class is made up of six lines: Course Name, Teacher, Classroom, During, Date, Time.
+		my $class = {
+			name 		=> $_[0][0],
+			teacher 	=> $_[0][1],
+			location 	=> $_[0][2],
+			week 		=> $_[0][3][0],
+			during 		=> $_[0][3][1] - $_[0][3][0] + 1,
+			date 		=> $_[0][4],
+			s_time 		=> $_[0][5][0],
+			t_time 	  	=> $_[0][5][1],
+		};
 
-		if ( not exists $courses_table{${$_[0]}[0]})
+		push @{$_[1]}, $class;
+
+		if ( not exists $courses_table{$_[0][0]})
 		{
-			$courses_table{${$_[0]}[0]} = keys %courses_table;
+			$courses_table{$_[0][0]} = keys %courses_table;
 		}
-		++$courses{${$_[0]}[0]};
+		++$courses{$_[0][0]};
 		@{$_[0]} = ();
 	}
 }

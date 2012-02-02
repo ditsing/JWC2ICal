@@ -2,7 +2,7 @@
 # Usage
 # jwc2ical [class_num]
 # Examples: 	jwc2ical 0903101
-# 		jwc2ical 0903102 > 0903103.ics
+# 		jwc2ical 0903102 > 0903102.ics
 
 use strict;
 use LWP;
@@ -178,7 +178,7 @@ my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_l
 
 my @classes;
 my %courses;
-my %courses_table;
+my %courses_tabl;
 # @classes[lesson][day][count] represents a class. 
 # A class is made up of four lines: Course Name, Teacher, Classroom, During, Date, Time.
 # During means from week a to week b, Date means which day of the week.

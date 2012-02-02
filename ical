@@ -1,0 +1,181 @@
+#!/usr/bin/perl -w
+# Usage
+# jwc2ical [class_num]
+# Examples: 	jwc2ical 0903101
+# 		jwc2ical 0903102 > 0903102.ics
+
+use strict;
+use Data::ICal;
+use Data::ICal::Entry qw(all);
+use Data::ICal::Entry::Event;
+use Data::ICal::Entry::TimeZone;
+use Data::ICal::Entry::TimeZone::Standard;
+use Data::ICal::Entry::Alarm::Display;
+use Date::ICal;
+use utf8;
+use CGI qw /:standard/;
+
+my $query = CGI->new( "class" => '0903101');
+my $class_num = $query->param( "-class");
+my $file_name = $qeury->param( "serial");
+
+open <CLASS>, "<", $file_name.".ical.classes" or print "Content-Type:text/html\n\nClasses not found!\n" and exit;
+my @classes;
+
+# All informations are available now.
+my $tz = "Asia/Shanghai"; # Or Harbin.
+my $tzset = "+0800";
+
+my $vcal = Data::ICal->new();
+# Copied from export data of Google Calender.
+$vcal->add_properties(
+	method => "PUBLISH",
+	calscale => "GREGORIAN",
+	"X-WR-CALNAME" => "哈工大${class_num}班${year}年".( $month < 6 ? "春" : "秋")."季课程表",
+	"X-WR-TIMEZONE" => $tz, 
+);
+
+my $vtz = Data::ICal::Entry::TimeZone->new();
+$vtz->add_properties(
+	tzid => $tz, 
+	"X-LIC-LOCATION" => $tz,  # I think this is nothing, too.
+);
+
+my $vtz_std = Data::ICal::Entry::TimeZone::Standard->new();
+
+$vtz_std->add_properties(
+	tzoffsetfrom => $tzset,
+	tzoffsetto => $tzset,
+	tzname => "CST",
+	dtstart => "19700101T000000"
+);
+
+$vtz->add_entry( $vtz_std);
+$vcal->add_entry( $vtz);
+
+#print $vcal->as_string, "\n";
+
+my $first_day = Date::ICal->new(
+	year 		=> $first_monday[0],
+	month 		=> $first_monday[1],
+	day 		=> $first_monday[2],
+	offset 		=> $tzset,
+);
+
+my $now = Date::ICal->new;
+my $str_now_cst = $now->ical( offset => $tzset);
+my $str_now_utc = $now->ical;
+#my $second_day = $first_day->clone;
+#$second_day->add( day => 163);
+#print $first_day->ical( offset => $tzset), "\n", $second_day->ical( offset => $tzset), "\n";
+
+# Events come here
+foreach ( @classes)
+{
+	my %class_info = %$_;
+	print "Adding $class_info{name} from $class_info{time}[0][0] to $class_info{time}[1][0] clock ".
+	"from NO.$class_info{during}[0] to NO.$class_info{during}[1] week on $day_name[$class_info{date}]\n";
+
+	# Until now ( 2012.1), JWC does not support a class ends at the middle of a week.
+	# So I do not condsider it.
+
+	# Find out when the first class starts.
+	my $first_class_start_time = $first_day->clone;
+	my $first_class_end_time = $first_day->clone;
+
+	$first_class_start_time->add(
+		day    		=> $class_info{during}[0] * 7 - 7 + $class_info{date},
+		hour   		=> $class_info{time}[0][0],
+		min    		=> $class_info{time}[0][1],
+		sec    		=> 0,
+	);
+
+	$first_class_end_time->add(
+		day    		=> $class_info{during}[0] * 7 - 7 + $class_info{date},
+		hour   		=> $class_info{time}[1][0],
+		min    		=> $class_info{time}[1][1],
+		sec    		=> 0,
+	);
+
+	my $class_count = $class_info{during}[1] - $class_info{during}[0] + 1;
+	my $str_start = $first_class_start_time->ical( offset => $tzset);
+	my $str_end = $first_class_end_time->ical( offset => $tzset);
+
+	my $vevent = Data::ICal::Entry::Event->new;
+	$vevent->add_properties(
+		# RFC 2445 said, dtstart/end with rrule must specify tzid
+		dtstart 	=> [ $str_start, { tzid => $tz}],
+		dtend	  	=> [ $str_end, { tzid => $tz}],
+		rrule 		=> "FREQ=WEEKLY;COUNT=$class_count;BYDAY=$day_name[$class_info{date}]",
+		exdate 		=> [ $str_now_cst, { tzid => $tz}],			# Now
+		dtstamp		=> $str_now_utc, 
+		created  	=> $str_now_utc,
+		description  	=> "Teacher: ".$class_info{teacher},			# Teacher
+		"last-modified" => $str_now_utc,
+		location 	=> $class_info{location},				# Class room
+		sequence 	=> 1,
+		status 		=> "CONFIRMED",
+		summary 	=> $class_info{name},					# Course name
+		transp 		=> "OPAQUE", 						# What is it ? 
+	);
+
+	my $valarm = Data::ICal::Entry::Alarm::Display->new();
+	$valarm->add_properties(
+		description 	=> "This is an event reminder",
+		trigger 	=> "-P0DT0H10M0S", 					# That means -10 mins.
+	);
+
+	$vevent->add_entry( $valarm);
+	$vcal->add_entry( $vevent);
+}
+
+foreach my $exam_info ( @exams)
+{
+	my $exam_start_time = $first_day->clone;
+
+	$exam_start_time->add(
+		day 	=> $exam_info->[0] * 7 - 7 + $exam_info->[1] - 1,
+		hour 	=> $exam_info->[2][0][0],
+		min 	=> $exam_info->[2][0][1],
+		sec 	=> 0,
+	);
+
+	my $exam_end_time = $first_day->clone;
+	$exam_end_time->add(
+		day 	=> $exam_info->[0] * 7 - 7 + $exam_info->[1] - 1,
+		hour 	=> $exam_info->[2][1][0],
+		min 	=> $exam_info->[2][1][1],
+		sec 	=> 0,
+	);
+
+
+	my $vexam = Data::ICal::Entry::Event->new;
+	$vexam->add_properties(
+		dtstart 	=> $exam_start_time->ical,
+		dtend	  	=> $exam_end_time->ical,
+		dtstamp		=> $str_now_utc, 
+		created  	=> $str_now_utc,
+		description  	=> "考试",
+		"last-modified" => $str_now_utc,
+		location 	=> $$exam_info[3], 					# Class room
+		sequence 	=> 1,
+		status 		=> "CONFIRMED",
+		summary 	=> $$exam_info[4], 					# Subject name
+		transp 		=> "OPAQUE", 						# What is it ? 
+	);
+
+	my $valarm = Data::ICal::Entry::Alarm::Display->new();
+	$valarm->add_properties(
+		description 	=> "This is an event reminder",
+		trigger 	=> "-P0DT0H10M0S", 					# That means -10 mins.
+	);
+
+	$vexam->add_entry( $valarm);
+	$vcal->add_entry( $vexam);
+}
+
+print "Content-Type:application/octet-stream; name=\"$class_num.ic\"\n";
+print "Content-Disposition: attachment; filename=\"$class_num.ics\"\n\n";
+print $vcal->as_string( crlf => "\n"), "\n";
+
+exit;

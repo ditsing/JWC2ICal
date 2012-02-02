@@ -1,0 +1,228 @@
+#!/usr/bin/perl -w
+# Usage
+# jwc2ical [class_num]
+# Examples: 	jwc2ical 0903101
+# 		jwc2ical 0903102 > 0903102.ics
+
+use strict;
+use LWP;
+use HTML::Tree;
+use HTML::TreeBuilder;
+use Encode;
+use utf8;
+use CGI qw /:standard/;
+
+my $query = CGI->new( "class" => '0903101');
+my $class_num = $query->param( "-class");
+
+my $browser = LWP::UserAgent->new;
+#my $class_num = $ARGV[0];
+my $table_url = 'http://xscj.hit.edu.cn/Hitjwgl/XS/kfxqkb.asp';
+my @num_name = qw{ 一 二 三 四 五 六 七 八 九 十 十一 十二};
+my @day_name = ( "MO", "TU", "WE", "TH", "FR", "SA", "SU");
+
+#my $table = $browser->post( $table_url, [ "BH" => $class_num]);
+#&check( $table, $table_url);
+
+my @class_times;
+my @first_monday;
+
+open SC, "<", "schedule" or die "No schedule!";
+my $date = <SC>;
+chomp $date;
+@first_monday = split /\s+/, $date;
+my $year = $first_monday[0];
+my $month = $first_monday[1];
+#print "@first_monday ". ( scalar @first_monday)."\n";
+
+while ( my $line = <SC>)
+{
+	chomp $line;
+	my @time = split /[\s|:]+/, $line;
+	#print $time[0], "p", $time[1], "p", $time[2], "p", $time[3], "\n",;
+	push @class_times, [ [ $time[0], $time[1]], [ $time[2], $time[3]]];
+}
+
+#my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
+open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
+my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
+
+# Or I may need to find out tbody.
+my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );
+#print $real_table->as_text, "\n";
+
+my @classes;
+my %courses;
+my %courses_table;
+#deprecated # @classes[lesson][day][count] represents a class. 
+
+# A class is made up of six lines: Course Name, Teacher, Classroom, During, Date, Time.
+# @classes[count] represents a class, like $classes[0]{teacher}.
+# During means from week a to week b.
+# Date means which day of the week.
+# Time means begin and end times, in the formate ( aa:bb, cc:dd).
+# We do have 6 big lessons everyday.
+foreach my $i ( 1..6)
+{
+	my $b = $i*2;
+	my $a = $b - 1;
+	my $lesson = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/($a)-($b)节/} );
+	# The first one is "a-b节", seven days a week, so 1..7.
+	if ( $lesson)
+	{
+		foreach my $j ( 1..7)
+		{
+			my $data = ( $lesson->content_list)[$j];
+
+			# Some data contains empty lines, so if there is a <tr>, there is a valid class.
+			if ( $data->look_down( '_tag', 'tr'))
+			{
+#				print "$a, day $j: ", $data->as_text, "\n";
+				my @tmp = ();
+
+				# They put them into a table, too. Painfully.
+				foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
+				{
+#					print "\tnow : ", $_->as_text, "\n";
+
+					# Classes are sperated by <hr>s in each <tr>.
+					if ( $_->look_down( '_tag', 'hr'))
+					{
+#						print "Get @tmp at $a-$b\n";
+						&check_and_push( \@tmp, \@classes, $j - 1, $i - 1);
+					}
+					else
+					{
+						# There will be two ( or more) empty lines after each
+						# '周考试' entry, egg pain. Ignore them.
+						if ( not $_->as_text eq "")
+						{
+							# When ARRAY @tmp has been pushed the course name,
+							# the following one is Teacher and Location.
+							# Such as "王忠杰 软件工程" and "吴 锐 嵌入式"
+							if ( @tmp == 1)
+							{
+								my @names = split /\s+/, $_->as_text;
+								if ( @names != 2)
+								{
+									my $name;
+									foreach ( @names[0..@names-2])
+									{
+										$name .= $_;
+									}
+									$names[0] = $name;
+								}
+								# The first and last ones are always useful.
+								push @tmp, $names[0];
+								push @tmp, $names[-1];
+							}
+							else
+							{
+								push @tmp, $_->as_text;
+							}
+						}
+					}
+				}
+
+				# The last one is not followed by a <hr>
+				&check_and_push( \@tmp, \@classes, $j - 1, $i - 1);
+			}
+		}
+	}
+}
+
+# Look for a row contains '考试安排'
+my $exams_table = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/考\s+试\s+安\s+排/} );
+$exams_table = $exams_table->look_down( '_tag', 'table');
+my @exams;
+foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
+{
+	if ( not $exam->as_text eq '')
+	{
+		my @exam_info = split /\s+/, $exam->as_text;
+		# Format is: week, date, time, location, subject. 
+		#print "Get @exam_info\n";
+		warn "Not expected data @exam_info" if @exam_info != 5;
+
+		$exam_info[0] =~ s/第(\d*)周/$1/ or warn "No accure week";
+		$exam_info[1] =~ s/周(\d*)/$1/ or warn "No accure word on date";
+		$exam_info[1] = &find( [ @num_name], $exam_info[1]) or warn "No accure date";
+
+		my $time = $exam_info[2];
+
+		# Say that the start time and end time are all two digits. Like 08:00-10:00.
+		# As far as I know, HIT never starts an exam at 8:00 in the morning.
+		$time =~ m/(\d\d):(\d\d)-(\d\d):(\d\d)/ or warn "Time format is not recognized: $time";
+		# This reg exp is NOT the same as before. See ':' and '：' ? 
+		
+		# Replace the string with a reference.
+		$exam_info[2] = [ [$1, $2], [ $3, $4]];
+
+		$exam_info[4] .= "考试";
+		my $exam = {
+			week 		=> $exam_info[0],
+			date 		=> $exam_info[1],
+			time 		=> $exam_info[2],
+			location 	=> $exam_info[3],
+			name 		=> $exam_info[4],
+		};
+		push @exams, [ @exam_info];
+	}
+}
+
+exit;
+
+sub check_and_push
+{
+	# Examinations are ignored and they will be processed later.
+	if ( not $_[0][0] =~ m/周考试/)
+	{
+		warn "Not expected data @{$_[0]}" if @{$_[0]} != 4;
+		my $weeks = $_[0][3];
+		warn "Not recognized weeks at $weeks" if not $weeks =~ m/(\d*)-(\d*)周/;
+		$_[0][3] = [ $1, $2];
+		push @{$_[0]}, $_[2], [ $class_times[$_[3]*2][0], $class_times[$_[3]*2+1][1]];
+
+		#A class is made up of six lines: Course Name, Teacher, Classroom, During, Date, Time.
+		my $class = {
+			name 		=> $_[0][0],
+			teacher 	=> $_[0][1],
+			location 	=> $_[0][2],
+			during 		=> $_[0][3],
+			date 		=> $_[0][4],
+			time 		=> $_[0][5],
+		};
+
+		push @{$_[1]}, $class;
+
+		if ( not exists $courses_table{$_[0][0]})
+		{
+			$courses_table{$_[0][0]} = keys %courses_table;
+		}
+		++$courses{$_[0][0]};
+		@{$_[0]} = ();
+	}
+}
+
+sub find
+{
+	my $num = $_[0];
+	foreach ( 1..@$num)
+	{
+		return $_ if ( $_[1] eq ${$num}[$_-1]);
+	}
+	return undef;
+}
+
+sub check
+{
+	my $response = $_[0];
+	my $url = $_[1];
+	die "$url error: ", $response->status_line unless $response->is_success;
+	die "Weird content type at $url -- ", $response->content_type
+		unless $response->content_type eq 'text/html';
+#	print $response->content;
+
+	return $response;
+}
+

@@ -19,8 +19,8 @@ use Date::ICal;
 use utf8;
 use CGI qw /:standard/;
 
-my $query = CGI->new;
-my $class_num = $query->param( "class");
+my $query = CGI->new( "class" => '0903101');
+my $class_num = $query->param( "-class");
 
 my $browser = LWP::UserAgent->new;
 #my $class_num = $ARGV[0];

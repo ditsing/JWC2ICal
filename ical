@@ -13,14 +13,91 @@ use Data::ICal::Entry::TimeZone::Standard;
 use Data::ICal::Entry::Alarm::Display;
 use Date::ICal;
 use utf8;
+use encoding 'utf8';
 use CGI qw /:standard/;
 
-my $query = CGI->new( "class" => '0903101');
-my $class_num = $query->param( "-class");
-my $file_name = $qeury->param( "serial");
+my $query = CGI->new;
+my $class_num = '0903101';
+my $file_name = '/dev/shm/'.'t'.'.ical.events';
+my @needed_class = ( 0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
 
-open <CLASS>, "<", $file_name.".ical.classes" or print "Content-Type:text/html\n\nClasses not found!\n" and exit;
+my @day_name = ( "MO", "TU", "WE", "TH", "FR", "SA", "SU");
+my @class_parts = qw/ name teacher location week during date s_time t_time/;
+my @exam_parts = qw/ week date s_time t_time location name/;
+
+open DT, "<", "dtstart" or die "No dtstart!";
+my $date = <DT>;
+chomp $date;
+my @first_monday = split /\s+/, $date;
+my $year = $first_monday[0];
+my $month = $first_monday[1];
+close DT;
+
+open EVENT, "<:encoding(utf8)", $file_name or print "Content-Type:text/html\n\nClasses not found!\n" and exit;
+my $line = <EVENT>;
+chomp $line;
+my @courses = split /\s+/, $line;
+my @useless;
+my $cnt = 0;
+foreach ( 0..( @courses-1))
+{
+	$cnt < @needed_class && $_ == $needed_class[$cnt] ? ++$cnt : push @useless, $courses[$_];
+}
+print "useless: @useless\n";
+
 my @classes;
+my @exams;
+while ( my $line = <EVENT>)
+{
+	chomp $line;
+	my @info = split /\s+/, $line;
+	if ( $info[0] eq 'Class:')
+	{
+		my %class_info;
+		foreach ( 1..@class_parts)
+		{
+			if ( $class_parts[$_-1] =~ m/time/)
+			{
+				$class_info{$class_parts[$_-1]} = [ split /:/, $info[$_]];
+			}
+			else
+			{
+				$class_info{$class_parts[$_-1]} = $info[$_];
+			}
+		}
+		my $flag = 1;
+		foreach ( @useless)
+		{
+			$class_info{name} =~ m/$_/ and $flag = undef or last;
+		}
+		push @classes, { %class_info} if $flag;
+		print $class_info{name}, "", $flag, "\n" if $flag;
+	}
+	else
+	{
+		my %exam_info;
+		foreach ( 1..@exam_parts)
+		{
+			if ( $exam_parts[$_-1] =~ m/time/)
+			{
+				$exam_info{$class_parts[$_-1]} = [ split /:/, $info[$_]];
+			}
+			else
+			{
+				$exam_info{$exam_parts[$_-1]} = $info[$_];
+			}
+		}
+		my $flag = 1;
+		foreach ( @useless)
+		{
+			$exam_info{name} =~ m/$_.*考试/ and $flag = undef or last;
+		}
+		push @exams, { %exam_info} if $flag;
+	}
+}
+close EVENT;
+#unlink $file_name;
+exit;
 
 # All informations are available now.
 my $tz = "Asia/Shanghai"; # Or Harbin.
@@ -73,8 +150,8 @@ my $str_now_utc = $now->ical;
 foreach ( @classes)
 {
 	my %class_info = %$_;
-	print "Adding $class_info{name} from $class_info{time}[0][0] to $class_info{time}[1][0] clock ".
-	"from NO.$class_info{during}[0] to NO.$class_info{during}[1] week on $day_name[$class_info{date}]\n";
+	print "Adding $class_info{name} from @{$class_info{s_time}} to @{$class_info{t_time}} clock ".
+	"at $class_info{week} week during $class_info{during} weeks on $day_name[$class_info{date}]\n";
 
 	# Until now ( 2012.1), JWC does not support a class ends at the middle of a week.
 	# So I do not condsider it.
@@ -84,20 +161,20 @@ foreach ( @classes)
 	my $first_class_end_time = $first_day->clone;
 
 	$first_class_start_time->add(
-		day    		=> $class_info{during}[0] * 7 - 7 + $class_info{date},
-		hour   		=> $class_info{time}[0][0],
-		min    		=> $class_info{time}[0][1],
+		day    		=> $class_info{week} * 7 - 7 + $class_info{date},
+		hour   		=> $class_info{s_time}[0],
+		min    		=> $class_info{s_time}[1],
 		sec    		=> 0,
 	);
 
 	$first_class_end_time->add(
-		day    		=> $class_info{during}[0] * 7 - 7 + $class_info{date},
-		hour   		=> $class_info{time}[1][0],
-		min    		=> $class_info{time}[1][1],
+		day    		=> $class_info{week} * 7 - 7 + $class_info{date},
+		hour   		=> $class_info{t_time}[0],
+		min    		=> $class_info{t_time}[1],
 		sec    		=> 0,
 	);
 
-	my $class_count = $class_info{during}[1] - $class_info{during}[0] + 1;
+	my $class_count = $class_info{during};
 	my $str_start = $first_class_start_time->ical( offset => $tzset);
 	my $str_end = $first_class_end_time->ical( offset => $tzset);
 
@@ -129,22 +206,23 @@ foreach ( @classes)
 	$vcal->add_entry( $vevent);
 }
 
-foreach my $exam_info ( @exams)
+foreach ( @exams)
 {
+	my %exam_info = %$_;
 	my $exam_start_time = $first_day->clone;
 
 	$exam_start_time->add(
-		day 	=> $exam_info->[0] * 7 - 7 + $exam_info->[1] - 1,
-		hour 	=> $exam_info->[2][0][0],
-		min 	=> $exam_info->[2][0][1],
+		day 	=> $exam_info{week} * 7 - 7 + $exam_info{date} - 1,
+		hour 	=> $exam_info{s_time}[0],
+		min 	=> $exam_info{s_time}[1],
 		sec 	=> 0,
 	);
 
 	my $exam_end_time = $first_day->clone;
 	$exam_end_time->add(
-		day 	=> $exam_info->[0] * 7 - 7 + $exam_info->[1] - 1,
-		hour 	=> $exam_info->[2][1][0],
-		min 	=> $exam_info->[2][1][1],
+		day 	=> $exam_info{week} * 7 - 7 + $exam_info{date} - 1,
+		hour 	=> $exam_info{t_time}[0],
+		min 	=> $exam_info{t_time}[1],
 		sec 	=> 0,
 	);
 
@@ -157,10 +235,10 @@ foreach my $exam_info ( @exams)
 		created  	=> $str_now_utc,
 		description  	=> "考试",
 		"last-modified" => $str_now_utc,
-		location 	=> $$exam_info[3], 					# Class room
+		location 	=> $exam_info{location},				# Class room
 		sequence 	=> 1,
 		status 		=> "CONFIRMED",
-		summary 	=> $$exam_info[4], 					# Subject name
+		summary 	=> $exam_info{name}, 					# Subject name
 		transp 		=> "OPAQUE", 						# What is it ? 
 	);
 
@@ -174,8 +252,9 @@ foreach my $exam_info ( @exams)
 	$vcal->add_entry( $vexam);
 }
 
-print "Content-Type:application/octet-stream; name=\"$class_num.ic\"\n";
-print "Content-Disposition: attachment; filename=\"$class_num.ics\"\n\n";
+#print "Content-Type:application/octet-stream; name=\"$class_num.ics\"\n";
+#print "Content-Disposition: attachment; filename=\"$class_num.ics\"\n\n";
+print header( -type => 'application/octet-stream', -attachment => "$class_num.ics", -charset => 'utf-8');
 print $vcal->as_string( crlf => "\n"), "\n";
 
 exit;

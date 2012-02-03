@@ -10,31 +10,25 @@ use HTML::Tree;
 use HTML::TreeBuilder;
 use Encode;
 use utf8;
+use encoding 'utf8';
 use CGI qw /:standard/;
 
-my $query = CGI->new( "class" => '0903101');
+my $query = CGI->new( { "class" => '0903101'});
 my $class_num = $query->param( "-class");
 
 my $browser = LWP::UserAgent->new;
 #my $class_num = $ARGV[0];
 my $table_url = 'http://xscj.hit.edu.cn/Hitjwgl/XS/kfxqkb.asp';
 my @num_name = qw{ 一 二 三 四 五 六 七 八 九 十 十一 十二};
-my @day_name = ( "MO", "TU", "WE", "TH", "FR", "SA", "SU");
+my @class_parts = qw/ name teacher location week during date s_time t_time/;
+my @exam_parts = qw/ week date s_time t_time location name/;
 
 #my $table = $browser->post( $table_url, [ "BH" => $class_num]);
 #&check( $table, $table_url);
 
 my @class_times;
-my @first_monday;
 
 open SC, "<", "schedule" or die "No schedule!";
-my $date = <SC>;
-chomp $date;
-@first_monday = split /\s+/, $date;
-my $year = $first_monday[0];
-my $month = $first_monday[1];
-#print "@first_monday ". ( scalar @first_monday)."\n";
-
 while ( my $line = <SC>)
 {
 	chomp $line;
@@ -42,6 +36,7 @@ while ( my $line = <SC>)
 	#print $time[0], "p", $time[1], "p", $time[2], "p", $time[3], "\n",;
 	push @class_times, [ [ $time[0], $time[1]], [ $time[2], $time[3]]];
 }
+close SC;
 
 #my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
 open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
@@ -78,7 +73,7 @@ foreach my $i ( 1..6)
 			if ( $data->look_down( '_tag', 'tr'))
 			{
 #				print "$a, day $j: ", $data->as_text, "\n";
-				my @tmp = ();
+				my @class_info = ();
 
 				# They put them into a table, too. Painfully.
 				foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
@@ -88,8 +83,8 @@ foreach my $i ( 1..6)
 					# Classes are sperated by <hr>s in each <tr>.
 					if ( $_->look_down( '_tag', 'hr'))
 					{
-#						print "Get @tmp at $a-$b\n";
-						&check_and_push( \@tmp, \@classes, $j - 1, $i - 1);
+#						print "Get @class_info at $a-$b\n";
+						&check_and_push( \@class_info, \@classes, $j - 1, $i - 1);
 					}
 					else
 					{
@@ -97,10 +92,10 @@ foreach my $i ( 1..6)
 						# '周考试' entry, egg pain. Ignore them.
 						if ( not $_->as_text eq "")
 						{
-							# When ARRAY @tmp has been pushed the course name,
+							# When ARRAY @class_info has been pushed the course name,
 							# the following one is Teacher and Location.
 							# Such as "王忠杰 软件工程" and "吴 锐 嵌入式"
-							if ( @tmp == 1)
+							if ( @class_info == 1)
 							{
 								my @names = split /\s+/, $_->as_text;
 								if ( @names != 2)
@@ -113,19 +108,19 @@ foreach my $i ( 1..6)
 									$names[0] = $name;
 								}
 								# The first and last ones are always useful.
-								push @tmp, $names[0];
-								push @tmp, $names[-1];
+								push @class_info, $names[0];
+								push @class_info, $names[-1];
 							}
 							else
 							{
-								push @tmp, $_->as_text;
+								push @class_info, $_->as_text;
 							}
 						}
 					}
 				}
 
 				# The last one is not followed by a <hr>
-				&check_and_push( \@tmp, \@classes, $j - 1, $i - 1);
+				&check_and_push( \@class_info, \@classes, $j - 1, $i - 1);
 			}
 		}
 	}
@@ -135,11 +130,11 @@ foreach my $i ( 1..6)
 my $exams_table = $real_table->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/考\s+试\s+安\s+排/} );
 $exams_table = $exams_table->look_down( '_tag', 'table');
 my @exams;
-foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
+foreach my $exam_node ( $exams_table->look_down( '_tag', 'td'))
 {
-	if ( not $exam->as_text eq '')
+	if ( not $exam_node->as_text eq '')
 	{
-		my @exam_info = split /\s+/, $exam->as_text;
+		my @exam_info = split /\s+/, $exam_node->as_text;
 		# Format is: week, date, time, location, subject. 
 		#print "Get @exam_info\n";
 		warn "Not expected data @exam_info" if @exam_info != 5;
@@ -162,13 +157,58 @@ foreach my $exam ( $exams_table->look_down( '_tag', 'td'))
 		my $exam = {
 			week 		=> $exam_info[0],
 			date 		=> $exam_info[1],
-			time 		=> $exam_info[2],
+			s_time 		=> $exam_info[2][0],
+			t_time 		=> $exam_info[2][1],
 			location 	=> $exam_info[3],
 			name 		=> $exam_info[4],
 		};
-		push @exams, [ @exam_info];
+		push @exams, $exam;
 	}
 }
+
+my $file_name = rand;
+open EVENT, ">:encoding(utf8)", "/dev/shm/".$file_name.".ical.events" or print "Content-Type:text/html\n\nClasses not found!\n" and exit;
+my @courses_list = sort keys %courses;
+print EVENT "@courses_list\n";
+
+foreach ( @classes)
+{
+	my %class = %$_;
+	print EVENT "Class:";
+	foreach ( @class_parts)
+	{
+		print EVENT " ", $_ =~ m/time/ ? $class{$_}[0].":".$class{$_}[1] : $class{$_};
+	}
+	print EVENT "\n";
+}
+
+foreach ( @exams)
+{
+	my %exam = %$_;
+	print EVENT "Exam:";
+	foreach ( @exam_parts)
+	{
+		print EVENT " ", $_ =~ m/time/ ? $exam{$_}[0].":".$exam{$_}[1] : $exam{$_};
+	}
+	print EVENT "\n";
+}
+
+close EVENT;
+
+print header( -type => "text/html", -charset=>'utf-8'),
+	start_html( "Check boxes"),
+	h3( "Uncheck the classes that are not needed."),
+	start_form( -method => "post", -action=>"ical?class=$class_num&serial=$file_name");
+my $cnt = 0;
+foreach ( sort keys %courses_table)
+{
+	print checkbox( -name => 'courses', -checked => 1, -label => $_, -value => $cnt), "\n";
+	++$cnt;
+	print p;
+}
+print submit( 'submit');
+print end_form;
+print end_html;
 
 exit;
 
@@ -188,9 +228,11 @@ sub check_and_push
 			name 		=> $_[0][0],
 			teacher 	=> $_[0][1],
 			location 	=> $_[0][2],
-			during 		=> $_[0][3],
+			week 		=> $_[0][3][0],
+			during 		=> $_[0][3][1] - $_[0][3][0] + 1,
 			date 		=> $_[0][4],
-			time 		=> $_[0][5],
+			s_time 		=> $_[0][5][0],
+			t_time 	  	=> $_[0][5][1],
 		};
 
 		push @{$_[1]}, $class;

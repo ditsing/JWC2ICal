@@ -276,7 +276,13 @@ foreach my $exam_node ( $exams_table->look_down( '_tag', 'td'))
 		my @exam_info = split /\s+/, $exam_node->as_text;
 		# Format is: week, date, time, location, subject. 
 		#print "Get @exam_info\n";
-		warn "Not expected data @exam_info" if @exam_info != 5;
+		#warn "Not expected data @exam_info" if @exam_info != 5;
+		# There might be spaces in name of classes.
+		while ( @exam_info != 5)
+		{
+			$exam_info[-2] .= " " . $exam_info[-1];
+			pop @exam_info;
+		}
 
 		$exam_info[0] =~ s/第(\d*)周/$1/ or warn "No accure week";
 		$exam_info[1] =~ s/周日/周七/;
@@ -354,6 +360,7 @@ my $str_now_utc = $now->ical;
 #$second_day->add( day => 163);
 #print $first_day->ical( offset => $tzset), "\n", $second_day->ical( offset => $tzset), "\n";
 
+binmode( STDOUT, ":utf8");
 # Events come here
 foreach ( @classes)
 {

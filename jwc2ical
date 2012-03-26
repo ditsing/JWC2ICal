@@ -46,8 +46,6 @@ my $time_table = $browser->get( $time_url);
 my @class_times;
 
 my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
-#open(my $tifh, "<:encoding(gbk)", "zxsj.htm") || die "no open tifh";
-#my $time_tree = HTML::TreeBuilder->new_from_file( $tifh);
 
 # Look for a table data who has atleast 20 sons.
 # This must be the class Schedule.
@@ -77,8 +75,6 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 # Now for date table.
 
 my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
-#open(my $dfh, "<:encoding(gbk)", "disp.htm") || die "no open";
-#my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
 
 # Only the head is needed.
 my $real_date = $date_tree->look_down( '_tag', 'thead');
@@ -177,8 +173,6 @@ push @first_monday, $monday_dates[0];
 #print "@first_monday\n". ( scalar @first_monday)."\n";
 
 my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
-#open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
-#my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
 
 # Or I may need to find out tbody.
 my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );

@@ -29,14 +29,14 @@ my @num_syb = ( "\x{2474}", "\x{2475}", "\x{2476}", "\x{2477}", "\x{2478}", "\x{
 	"\x{2481}", "\x{2482}", "\x{2483}", "\x{2484}", "\x{2485}", "\x{2486}", "\x{2487}");
 my @day_name = ( "MO", "TU", "WE", "TH", "FR", "SA", "SU");
 
-#my $table = $browser->post( $table_url, [ "BH" => $class_num]);
-#&check( $table, $table_url);
+my $table = $browser->post( $table_url, [ "BH" => $class_num]);
+&check( $table, $table_url);
 
-#my $date_table = $browser->get( $date_url);
-#&check( $date_table, $date_url);
+my $date_table = $browser->get( $date_url);
+&check( $date_table, $date_url);
 
-#my $time_table = $browser->get( $time_url);
-#&check( $time_table, $time_url);
+my $time_table = $browser->get( $time_url);
+&check( $time_table, $time_url);
 
 # Now we get 3 valid tables. Although only few bytes are useful.
 # Let's parse it now.
@@ -45,9 +45,9 @@ my @day_name = ( "MO", "TU", "WE", "TH", "FR", "SA", "SU");
 
 my @class_times;
 
-#my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
-open(my $tifh, "<:encoding(gbk)", "zxsj.htm") || die "no open tifh";
-my $time_tree = HTML::TreeBuilder->new_from_file( $tifh);
+my $time_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $time_table->content));
+#open(my $tifh, "<:encoding(gbk)", "zxsj.htm") || die "no open tifh";
+#my $time_tree = HTML::TreeBuilder->new_from_file( $tifh);
 
 # Look for a table data who has atleast 20 sons.
 # This must be the class Schedule.
@@ -76,9 +76,9 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 # So the start and end time is stored in @class_times;
 # Now for date table.
 
-#my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
-open(my $dfh, "<:encoding(gbk)", "disp.htm") || die "no open";
-my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
+my $date_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $date_table->content));
+#open(my $dfh, "<:encoding(gbk)", "disp.htm") || die "no open";
+#my $date_tree = HTML::TreeBuilder->new_from_file( $dfh);
 
 # Only the head is needed.
 my $real_date = $date_tree->look_down( '_tag', 'thead');
@@ -115,11 +115,13 @@ foreach ( ($month_list->content_list)[1..($month_list->content_list-1)])
 # Get weeks out.
 my $week_list = $real_date->look_down( '_tag', 'tr', $look_for{ 周});
 my @weeks;
+my @weeks_length;
 
 foreach ( ( $week_list->content_list)[1..($week_list->content_list-1)])
 {
 	my $num = &find( [ @num_syb], $_->as_text);
 	push @weeks, $num ? $num + 100 : $_->as_text;
+	push @weeks_length, defined $_->attr( 'colspan') ? $_->attr( 'colspan') : 1;
 }
 #print "@weeks", "\n";
 
@@ -128,8 +130,13 @@ foreach ( 1..@month_length)
 	$month_length[$_] += $month_length[$_-1];
 }
 
-die "Not so useful date html ". ( scalar @weeks) . " and $month_length[-1]", "\n"
-	if @weeks != $month_length[-1];
+foreach( 1..@weeks_length)
+{
+	$weeks_length[$_] += $weeks_length[$_-1];
+}
+
+die "Not so useful date html ". ( scalar $weeks_length[-1]) . " and $month_length[-1]", "\n"
+	if $weeks_length[-1] != $month_length[-1];
 
 # Get dates of mondays and sundays out.
 my @monday_dates;
@@ -152,7 +159,8 @@ foreach ( ( $sunday_list->content_list)[1..($sunday_list->content_list-1)])
 my @first_monday;
 my $month = $month[0];
 
-if ( $monday_dates[0] != $sunday_dates[0] - 6 && $sunday_dates[0] > 3)
+# I gussed it!! This might be WRONG!!
+if ( $monday_dates[0] != $sunday_dates[0] - 6 && $monday_dates[0] > 28)
 {
 	# Some wrong date are present, egg pain.
 	--$year, $month = 12 if ( --$month == 0);
@@ -168,12 +176,13 @@ push @first_monday, $monday_dates[0];
 
 #print "@first_monday\n". ( scalar @first_monday)."\n";
 
-#my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
-open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
-my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
+my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
+#open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
+#my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
 
 # Or I may need to find out tbody.
 my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );
+die "Wrong class number $class_num!" unless $real_table;
 #print $real_table->as_text, "\n";
 
 my @classes;
@@ -181,9 +190,9 @@ my %courses;
 my %courses_table;
 #deprecated # @classes[lesson][day][count] represents a class. 
 
-# A class is made up of six lines: Course Name, Teacher, Classroom, During, Date, Time.
+# A class is made up of six lines: Course Name, Teacher, Classroom, Repeats, Date, Time.
 # @classes[count] represents a class, like $classes[0]{teacher}.
-# During means from week a to week b.
+# Repeats means how many times a class repeats.
 # Date means which day of the week.
 # Time means begin and end times, in the formate ( aa:bb, cc:dd).
 # We do have 6 big lessons everyday.
@@ -270,6 +279,7 @@ foreach my $exam_node ( $exams_table->look_down( '_tag', 'td'))
 		warn "Not expected data @exam_info" if @exam_info != 5;
 
 		$exam_info[0] =~ s/第(\d*)周/$1/ or warn "No accure week";
+		$exam_info[1] =~ s/周日/周七/;
 		$exam_info[1] =~ s/周(\d*)/$1/ or warn "No accure word on date";
 		$exam_info[1] = &find( [ @num_name], $exam_info[1]) or warn "No accure date";
 
@@ -277,7 +287,8 @@ foreach my $exam_node ( $exams_table->look_down( '_tag', 'td'))
 
 		# Say that the start time and end time are all two digits. Like 08:00-10:00.
 		# As far as I know, HIT never starts an exam at 8:00 in the morning.
-		$time =~ m/(\d\d):(\d\d)-(\d\d):(\d\d)/ or warn "Time format is not recognized: $time";
+		# 2012 Spring, class 1104101 happened!! NO!!!!
+		$time =~ m/(\d?\d):(\d\d)-(\d\d):(\d\d)/ or warn "Time format is not recognized: $time";
 		# This reg exp is NOT the same as before. See ':' and '：' ? 
 		
 		# Replace the string with a reference.
@@ -347,8 +358,8 @@ my $str_now_utc = $now->ical;
 foreach ( @classes)
 {
 	my %class_info = %$_;
-	#print "Adding $class_info{name} from @{$class_info{s_time}} to @{$class_info{t_time}} clock ".
-	#"at $class_info{week} week during $class_info{during} weeks on $day_name[$class_info{date}]\n";
+	print "Adding $class_info{name} from @{$class_info{s_time}} to @{$class_info{t_time}} clock ".
+	"at $class_info{week} week repeats $class_info{repeats} weeks on $day_name[$class_info{date}]\n";
 
 	# Until now ( 2012.1), JWC does not support a class ends at the middle of a week.
 	# So I do not condsider it.
@@ -371,7 +382,7 @@ foreach ( @classes)
 		sec    		=> 0,
 	);
 
-	my $class_count = $class_info{during};
+	my $class_count = $class_info{repeats};
 	my $str_start = $first_class_start_time->ical( offset => $tzset);
 	my $str_end = $first_class_end_time->ical( offset => $tzset);
 
@@ -464,13 +475,13 @@ sub check_and_push
 		$_[0][3] = [ $1, $2];
 		push @{$_[0]}, $_[2], [ $class_times[$_[3]*2][0], $class_times[$_[3]*2+1][1]];
 
-		#A class is made up of six lines: Course Name, Teacher, Classroom, During, Date, Time.
+		#A class is made up of six lines: Course Name, Teacher, Classroom, Repeats, Date, Time.
 		my $class = {
 			name 		=> $_[0][0],
 			teacher 	=> $_[0][1],
 			location 	=> $_[0][2],
 			week 		=> $_[0][3][0],
-			during 		=> $_[0][3][1] - $_[0][3][0] + 1,
+			repeats		=> $_[0][3][1] - $_[0][3][0] + 1,
 			date 		=> $_[0][4],
 			s_time 		=> $_[0][5][0],
 			t_time 	  	=> $_[0][5][1],

@@ -22,7 +22,7 @@ my $file_name = '/dev/shm/'.'t'.'.ical.events';
 my @needed_class = ( 0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
 
 my @day_name = ( "MO", "TU", "WE", "TH", "FR", "SA", "SU");
-my @class_parts = qw/ name teacher location week during date s_time t_time/;
+my @class_parts = qw/ name teacher location week repeats date s_time t_time/;
 my @exam_parts = qw/ week date s_time t_time location name/;
 
 open DT, "<", "dtstart" or die "No dtstart!";
@@ -50,7 +50,8 @@ my @exams;
 while ( my $line = <EVENT>)
 {
 	chomp $line;
-	my @info = split /\s+/, $line;
+	#my @info = split /\s+/, $line;
+	my @info = split /`/, $line;
 	if ( $info[0] eq 'Class:')
 	{
 		my %class_info;

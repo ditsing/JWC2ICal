@@ -20,11 +20,11 @@ my $browser = LWP::UserAgent->new;
 #my $class_num = $ARGV[0];
 my $table_url = 'http://xscj.hit.edu.cn/Hitjwgl/XS/kfxqkb.asp';
 my @num_name = qw{ 一 二 三 四 五 六 七 八 九 十 十一 十二};
-my @class_parts = qw/ name teacher location week during date s_time t_time/;
+my @class_parts = qw/ name teacher location week repeats date s_time t_time/;
 my @exam_parts = qw/ week date s_time t_time location name/;
 
-#my $table = $browser->post( $table_url, [ "BH" => $class_num]);
-#&check( $table, $table_url);
+my $table = $browser->post( $table_url, [ "BH" => $class_num]);
+&check( $table, $table_url);
 
 my @class_times;
 
@@ -38,12 +38,13 @@ while ( my $line = <SC>)
 }
 close SC;
 
-#my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
-open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
-my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
+my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
+#open(my $tfh, "<:encoding(gbk)", "kfx.htm") || die "no open tfh";
+#my $table_tree = HTML::TreeBuilder->new_from_file( $tfh);
 
 # Or I may need to find out tbody.
 my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );
+die "Wrong class number $class_num!" unless $real_table;
 #print $real_table->as_text, "\n";
 
 my @classes;
@@ -51,9 +52,9 @@ my %courses;
 my %courses_table;
 #deprecated # @classes[lesson][day][count] represents a class. 
 
-# A class is made up of six lines: Course Name, Teacher, Classroom, During, Date, Time.
+# A class is made up of six lines: Course Name, Teacher, Classroom, Repeats, Date, Time.
 # @classes[count] represents a class, like $classes[0]{teacher}.
-# During means from week a to week b.
+# Repeats means how many times a class repeats.
 # Date means which day of the week.
 # Time means begin and end times, in the formate ( aa:bb, cc:dd).
 # We do have 6 big lessons everyday.
@@ -140,6 +141,7 @@ foreach my $exam_node ( $exams_table->look_down( '_tag', 'td'))
 		warn "Not expected data @exam_info" if @exam_info != 5;
 
 		$exam_info[0] =~ s/第(\d*)周/$1/ or warn "No accure week";
+		$exam_info[1] =~ s/周日/周七/;
 		$exam_info[1] =~ s/周(\d*)/$1/ or warn "No accure word on date";
 		$exam_info[1] = &find( [ @num_name], $exam_info[1]) or warn "No accure date";
 
@@ -147,7 +149,8 @@ foreach my $exam_node ( $exams_table->look_down( '_tag', 'td'))
 
 		# Say that the start time and end time are all two digits. Like 08:00-10:00.
 		# As far as I know, HIT never starts an exam at 8:00 in the morning.
-		$time =~ m/(\d\d):(\d\d)-(\d\d):(\d\d)/ or warn "Time format is not recognized: $time";
+		# 2012 Spring, class 1104101 happened!! NO!!!!
+		$time =~ m/(\d?\d):(\d\d)-(\d\d):(\d\d)/ or warn "Time format is not recognized: $time";
 		# This reg exp is NOT the same as before. See ':' and '：' ? 
 		
 		# Replace the string with a reference.
@@ -177,7 +180,7 @@ foreach ( @classes)
 	print EVENT "Class:";
 	foreach ( @class_parts)
 	{
-		print EVENT " ", $_ =~ m/time/ ? $class{$_}[0].":".$class{$_}[1] : $class{$_};
+		print EVENT "`", $_ =~ m/time/ ? $class{$_}[0].":".$class{$_}[1] : $class{$_};
 	}
 	print EVENT "\n";
 }
@@ -188,7 +191,7 @@ foreach ( @exams)
 	print EVENT "Exam:";
 	foreach ( @exam_parts)
 	{
-		print EVENT " ", $_ =~ m/time/ ? $exam{$_}[0].":".$exam{$_}[1] : $exam{$_};
+		print EVENT "`", $_ =~ m/time/ ? $exam{$_}[0].":".$exam{$_}[1] : $exam{$_};
 	}
 	print EVENT "\n";
 }
@@ -223,13 +226,13 @@ sub check_and_push
 		$_[0][3] = [ $1, $2];
 		push @{$_[0]}, $_[2], [ $class_times[$_[3]*2][0], $class_times[$_[3]*2+1][1]];
 
-		#A class is made up of six lines: Course Name, Teacher, Classroom, During, Date, Time.
+		#A class is made up of six lines: Course Name, Teacher, Classroom, Repeats, Date, Time.
 		my $class = {
 			name 		=> $_[0][0],
 			teacher 	=> $_[0][1],
 			location 	=> $_[0][2],
 			week 		=> $_[0][3][0],
-			during 		=> $_[0][3][1] - $_[0][3][0] + 1,
+			repeats		=> $_[0][3][1] - $_[0][3][0] + 1,
 			date 		=> $_[0][4],
 			s_time 		=> $_[0][5][0],
 			t_time 	  	=> $_[0][5][1],

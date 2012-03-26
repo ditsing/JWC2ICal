@@ -65,7 +65,7 @@ foreach ( $real_time->look_down( '_tag', 'p', sub{ $_[0]->as_text =~ m/第.*节�
 	}
 	else
 	{
-		print "Not really $cnt\n";
+		warn "Not really $cnt and $+{count} at schedule\n";
 	}
 
 	++$cnt;
@@ -83,7 +83,6 @@ my $real_date = $date_tree->look_down( '_tag', 'thead');
 my $year_list = $real_date->look_down( '_tag', 'tr', sub { $_[0]->as_text =~ m/哈尔滨工业大学/});
 my $year = $year_list->as_text;
 $year =~ s/.*([\d]{4}).*/$1/;
-#print "year is $year.\n";
 
 my @month;
 my @month_length;
@@ -100,7 +99,6 @@ foreach ( qw( 月 周 星期一 星期日))
 
 # Get months out.
 my $month_list = $real_date->look_down( '_tag', 'tr', $look_for{ 月});
-#print $month_list->as_text, "\n";
 
 foreach ( ($month_list->content_list)[1..($month_list->content_list-1)])
 {
@@ -119,7 +117,6 @@ foreach ( ( $week_list->content_list)[1..($week_list->content_list-1)])
 	push @weeks, $num ? $num + 100 : $_->as_text;
 	push @weeks_length, defined $_->attr( 'colspan') ? $_->attr( 'colspan') : 1;
 }
-#print "@weeks", "\n";
 
 foreach ( 1..@month_length)
 {
@@ -166,18 +163,12 @@ push @first_monday, $year;
 push @first_monday, $month; 	 # Here is $month, not $month[0] !
 push @first_monday, $monday_dates[0];
 
-
-# This is a test output
-#print &find_date( [ @first_monday], 28), "\n";
-
-#print "@first_monday\n". ( scalar @first_monday)."\n";
-
+# Now it's the real class table.
 my $table_tree = HTML::TreeBuilder->new_from_content( decode( 'gbk', $table->content));
 
 # Or I may need to find out tbody.
 my $real_table = $table_tree->look_down( '_tag', 'table', sub { $_[0]->content_list >= 7 } );
 die "Wrong class number $class_num!" unless $real_table;
-#print $real_table->as_text, "\n";
 
 my @classes;
 my %courses;
@@ -205,18 +196,15 @@ foreach my $i ( 1..6)
 			# Some data contains empty lines, so if there is a <tr>, there is a valid class.
 			if ( $data->look_down( '_tag', 'tr'))
 			{
-#				print "$a, day $j: ", $data->as_text, "\n";
 				my @class_info = ();
 
 				# They put them into a table, too. Painfully.
 				foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
 				{
-#					print "\tnow : ", $_->as_text, "\n";
 
 					# Classes are sperated by <hr>s in each <tr>.
 					if ( $_->look_down( '_tag', 'hr'))
 					{
-#						print "Get @class_info at $a-$b\n";
 						&check_and_push( \@class_info, \@classes, $j - 1, $i - 1);
 					}
 					else
@@ -268,9 +256,9 @@ foreach my $exam_node ( $exams_table->look_down( '_tag', 'td'))
 	if ( not $exam_node->as_text eq '')
 	{
 		my @exam_info = split /\s+/, $exam_node->as_text;
-		# Format is: week, date, time, location, subject. 
-		#print "Get @exam_info\n";
 		#warn "Not expected data @exam_info" if @exam_info != 5;
+
+		# Format is: week, date, time, location, subject. 
 		# There might be spaces in name of classes.
 		while ( @exam_info != 5)
 		{
@@ -338,8 +326,6 @@ $vtz_std->add_properties(
 $vtz->add_entry( $vtz_std);
 $vcal->add_entry( $vtz);
 
-#print $vcal->as_string, "\n";
-
 my $first_day = Date::ICal->new(
 	year 		=> $first_monday[0],
 	month 		=> $first_monday[1],
@@ -350,17 +336,14 @@ my $first_day = Date::ICal->new(
 my $now = Date::ICal->new;
 my $str_now_cst = $now->ical( offset => $tzset);
 my $str_now_utc = $now->ical;
-#my $second_day = $first_day->clone;
-#$second_day->add( day => 163);
-#print $first_day->ical( offset => $tzset), "\n", $second_day->ical( offset => $tzset), "\n";
 
 binmode( STDOUT, ":utf8");
 # Events come here
 foreach ( @classes)
 {
 	my %class_info = %$_;
-	print "Adding $class_info{name} from @{$class_info{s_time}} to @{$class_info{t_time}} clock ".
-	"at $class_info{week} week repeats $class_info{repeats} weeks on $day_name[$class_info{date}]\n";
+#	print "Adding $class_info{name} from @{$class_info{s_time}} to @{$class_info{t_time}} clock ".
+#	"at $class_info{week} week repeats $class_info{repeats} weeks on $day_name[$class_info{date}]\n";
 
 	# Until now ( 2012.1), JWC does not support a class ends at the middle of a week.
 	# So I do not condsider it.

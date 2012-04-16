@@ -369,13 +369,15 @@ foreach ( @classes)
 	my $class_count = $class_info{repeats};
 	my $str_start = $first_class_start_time->ical( offset => $tzset);
 	my $str_end = $first_class_end_time->ical( offset => $tzset);
+	my $interval = $class_info{interval};
+	my $rule = "FREQ=WEEKLY;COUNT=$class_count;BYDAY=$day_name[$class_info{date}];INTERVAL=$interval";
 
 	my $vevent = Data::ICal::Entry::Event->new;
 	$vevent->add_properties(
 		# RFC 2445 said, dtstart/end with rrule must specify tzid
 		dtstart 	=> [ $str_start, { tzid => $tz}],
 		dtend	  	=> [ $str_end, { tzid => $tz}],
-		rrule 		=> "FREQ=WEEKLY;COUNT=$class_count;BYDAY=$day_name[$class_info{date}]",
+		rrule 		=> $rule,
 		exdate 		=> [ $str_now_cst, { tzid => $tz}],			# Now
 		dtstamp		=> $str_now_utc, 
 		created  	=> $str_now_utc,

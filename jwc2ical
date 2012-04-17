@@ -19,8 +19,8 @@ use Date::ICal;
 use utf8;
 use encoding 'utf8';
 
-my $browser = LWP::UserAgent->new;
 my $class_num = $ARGV[0];
+my $browser = LWP::UserAgent->new;
 my $table_url = 'http://xscj.hit.edu.cn/Hitjwgl/XS/kfxqkb.asp';
 my $date_url = 'http://jwc.hit.edu.cn/jwc/displaytwo.asp?ID=202';
 my $time_url = 'http://jwc.hit.edu.cn/jwc/displaytwo.asp?ID=201';

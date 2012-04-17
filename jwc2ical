@@ -17,6 +17,7 @@ use Data::ICal::Entry::TimeZone::Standard;
 use Data::ICal::Entry::Alarm::Display;
 use Date::ICal;
 use utf8;
+use encoding 'utf8';
 
 my $browser = LWP::UserAgent->new;
 my $class_num = $ARGV[0];
@@ -201,7 +202,6 @@ foreach my $i ( 1..6)
 				# They put them into a table, too. Painfully.
 				foreach ( ( ( $data->look_down( '_tag', 'table'))[0])->content_list)
 				{
-
 					# Classes are sperated by <hr>s in each <tr>.
 					if ( $_->look_down( '_tag', 'hr'))
 					{
@@ -337,7 +337,6 @@ my $now = Date::ICal->new;
 my $str_now_cst = $now->ical( offset => $tzset);
 my $str_now_utc = $now->ical;
 
-binmode( STDOUT, ":utf8");
 # Events come here
 foreach ( @classes)
 {
